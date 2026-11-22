@@ -6,8 +6,8 @@ use djuke_core::{BuildTool, DjukeError, Result};
 use djuke_platform::DjukePaths;
 use djuke_process::{CommandContext, ProcessRunner};
 
-use crate::bootstrap::ensure_build_tool_installed;
-use crate::wrapper::{find_build_executable_with_paths, ResolvedBuildExecutable};
+use crate::bootstrap::{create_gradle_wrapper, create_maven_wrapper};
+use crate::wrapper::find_build_executable_with_paths;
 
 #[derive(Debug, Clone)]
 pub struct TaskExecution<'a> {
@@ -22,30 +22,39 @@ pub struct TaskExecution<'a> {
 }
 
 pub async fn execute_task(exec: TaskExecution<'_>) -> Result<ExitStatus> {
-    let resolved = match find_build_executable_with_paths(exec.project_root, exec.tool, exec.paths)
-    {
-        Some(res) => res,
-        None => {
-            if let Some(paths) = exec.paths {
-                eprintln!(
-                    "No wrapper found in project. Auto-provisioning {} toolchain...",
-                    exec.tool
-                );
-                let exe = ensure_build_tool_installed(exec.tool, None, paths, false).await?;
-                ResolvedBuildExecutable {
-                    tool: exec.tool,
-                    executable: exe,
-                    is_wrapper: false,
-                }
-            } else {
-                return Err(DjukeError::NoBuildToolFound(format!(
-                    "Neither wrapper nor system executable found for '{}' in '{}'",
-                    exec.tool,
-                    exec.project_root.display()
-                )));
-            }
+    // 1. Ensure wrapper exists in project root. If missing, auto-create it instantly from embedded assets!
+    let has_wrapper = match exec.tool {
+        BuildTool::Gradle => {
+            let bat = exec.project_root.join("gradlew.bat");
+            let sh = exec.project_root.join("gradlew");
+            (cfg!(windows) && bat.is_file()) || sh.is_file()
+        }
+        BuildTool::Maven => {
+            let cmd = exec.project_root.join("mvnw.cmd");
+            let sh = exec.project_root.join("mvnw");
+            (cfg!(windows) && cmd.is_file()) || sh.is_file()
         }
     };
+
+    if !has_wrapper {
+        eprintln!(
+            "No {} wrapper found in project. Auto-generating wrapper...",
+            exec.tool
+        );
+        match exec.tool {
+            BuildTool::Gradle => create_gradle_wrapper(exec.project_root, None)?,
+            BuildTool::Maven => create_maven_wrapper(exec.project_root, None)?,
+        }
+    }
+
+    let resolved = find_build_executable_with_paths(exec.project_root, exec.tool, exec.paths)
+        .ok_or_else(|| {
+            DjukeError::NoBuildToolFound(format!(
+                "Failed to find or generate '{}' wrapper in '{}'",
+                exec.tool,
+                exec.project_root.display()
+            ))
+        })?;
 
     let mut cmd_args: Vec<&str> = exec.task_command.split_whitespace().collect();
 
