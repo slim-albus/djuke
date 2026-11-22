@@ -111,7 +111,7 @@ pub fn resolve_project_config_with_tool(
         (d, v, JdkResolutionSource::GlobalConfig(paths.config_file()))
     } else {
         (
-            JdkDistribution::Temurin,
+            JdkDistribution::default_distro(),
             "21".to_string(),
             JdkResolutionSource::FallbackDefault,
         )

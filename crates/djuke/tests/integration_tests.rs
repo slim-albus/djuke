@@ -43,7 +43,7 @@ fn test_end_to_end_project_detection_and_resolution() {
 
     let resolved = resolve_project_config(root, None, &paths);
     assert_eq!(resolved.jdk_spec.version, "17");
-    assert_eq!(resolved.jdk_spec.distribution, JdkDistribution::Temurin);
+    assert_eq!(resolved.jdk_spec.distribution, JdkDistribution::OpenJdk);
     assert_eq!(resolved.build_tool, Some(BuildTool::Maven));
     assert!(resolved.tasks.contains_key("build"));
     assert_eq!(resolved.tasks.get("build").unwrap(), "clean package");

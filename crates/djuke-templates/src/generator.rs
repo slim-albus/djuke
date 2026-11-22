@@ -357,6 +357,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.Map;
 
 @SpringBootApplication
 @RestController
@@ -366,8 +367,14 @@ public class Application {{
     }}
 
     @GetMapping("/")
-    public String index() {{
-        return "Greetings from Spring Boot + djuke!";
+    public Map<String, Object> index() {{
+        return Map.of(
+            "status", "UP",
+            "message", "Welcome to your Spring Boot application managed by djuke!",
+            "framework", "Spring Boot",
+            "runtime", System.getProperty("java.version"),
+            "toolchain", "djuke"
+        );
     }}
 }}
 "#,

@@ -107,6 +107,100 @@ impl SpringInitializrClient {
         Self::fallback_dependencies()
     }
 
+    /// Curated list of most popular, must-have dependencies shown by default
+    pub fn popular_dependencies() -> Vec<InitializrDependency> {
+        vec![
+            InitializrDependency {
+                id: "web".into(),
+                name: "Spring Web".into(),
+                description: Some(
+                    "Build web, including RESTful APIs using Spring MVC & Apache Tomcat".into(),
+                ),
+                category: "Web".into(),
+            },
+            InitializrDependency {
+                id: "devtools".into(),
+                name: "Spring Boot DevTools".into(),
+                description: Some(
+                    "Fast application restarts, LiveReload, and dev configurations".into(),
+                ),
+                category: "Developer Tools".into(),
+            },
+            InitializrDependency {
+                id: "actuator".into(),
+                name: "Spring Boot Actuator".into(),
+                description: Some(
+                    "Production-ready features like health checks and metrics".into(),
+                ),
+                category: "Ops".into(),
+            },
+            InitializrDependency {
+                id: "lombok".into(),
+                name: "Lombok".into(),
+                description: Some(
+                    "Java annotation library to reduce boilerplate (getters, builders, logs)"
+                        .into(),
+                ),
+                category: "Developer Tools".into(),
+            },
+            InitializrDependency {
+                id: "data-jpa".into(),
+                name: "Spring Data JPA".into(),
+                description: Some(
+                    "Persist SQL data with Java Persistence API using Spring Data & Hibernate"
+                        .into(),
+                ),
+                category: "SQL".into(),
+            },
+            InitializrDependency {
+                id: "validation".into(),
+                name: "Validation".into(),
+                description: Some("Bean Validation with Hibernate validator annotations".into()),
+                category: "I/O".into(),
+            },
+            InitializrDependency {
+                id: "security".into(),
+                name: "Spring Security".into(),
+                description: Some(
+                    "Highly customizable authentication and access-control framework".into(),
+                ),
+                category: "Security".into(),
+            },
+            InitializrDependency {
+                id: "postgresql".into(),
+                name: "PostgreSQL Driver".into(),
+                description: Some("A JDBC and R2DBC driver for PostgreSQL database".into()),
+                category: "SQL".into(),
+            },
+            InitializrDependency {
+                id: "mysql".into(),
+                name: "MySQL Driver".into(),
+                description: Some("MySQL JDBC and R2DBC database driver".into()),
+                category: "SQL".into(),
+            },
+            InitializrDependency {
+                id: "h2".into(),
+                name: "H2 Database".into(),
+                description: Some("Fast in-memory embedded SQL database for dev & testing".into()),
+                category: "SQL".into(),
+            },
+            InitializrDependency {
+                id: "thymeleaf".into(),
+                name: "Thymeleaf".into(),
+                description: Some(
+                    "Modern server-side Java template engine for HTML web views".into(),
+                ),
+                category: "Web".into(),
+            },
+            InitializrDependency {
+                id: "data-redis".into(),
+                name: "Spring Data Redis".into(),
+                description: Some("Advanced and fast key-value data store support".into()),
+                category: "NoSQL".into(),
+            },
+        ]
+    }
+
     pub fn fallback_dependencies() -> Vec<InitializrDependency> {
         vec![
             InitializrDependency {
@@ -393,8 +487,79 @@ mvnw text eol=lf
             let _ = fs::write(dest.join(".gitattributes"), gitattributes);
         }
 
+        // Ensure a welcome controller exists so localhost:8080 isn't an empty 404 Whitelabel error
+        let _ = ensure_welcome_controller(dest, &opts.group_id);
+
         Ok(())
     }
+}
+
+fn find_app_dir(dir: &Path) -> Option<std::path::PathBuf> {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                if let Some(res) = find_app_dir(&p) {
+                    return Some(res);
+                }
+            } else if p
+                .file_name()
+                .map(|n| n.to_string_lossy().ends_with("Application.java"))
+                .unwrap_or(false)
+            {
+                return p.parent().map(|d| d.to_path_buf());
+            }
+        }
+    }
+    None
+}
+
+fn ensure_welcome_controller(dest: &Path, group_id: &str) -> Result<()> {
+    let java_base = dest.join("src").join("main").join("java");
+    if !java_base.exists() {
+        return Ok(());
+    }
+
+    let target_dir = find_app_dir(&java_base).unwrap_or_else(|| {
+        let fallback = java_base.join(group_id.replace('.', "/"));
+        let _ = fs::create_dir_all(&fallback);
+        fallback
+    });
+
+    let controller_file = target_dir.join("HomeController.java");
+    if !controller_file.exists() {
+        let rel_pkg = target_dir
+            .strip_prefix(&java_base)
+            .map(|p| p.to_string_lossy().replace(['/', '\\'], "."))
+            .unwrap_or_else(|_| group_id.to_string());
+
+        let code = format!(
+            r#"package {};
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.Map;
+
+@RestController
+public class HomeController {{
+
+    @GetMapping("/")
+    public Map<String, Object> index() {{
+        return Map.of(
+            "status", "UP",
+            "message", "Welcome to your Spring Boot application managed by djuke!",
+            "framework", "Spring Boot",
+            "runtime", System.getProperty("java.version"),
+            "toolchain", "djuke"
+        );
+    }}
+}}
+"#,
+            rel_pkg
+        );
+        let _ = fs::write(controller_file, code);
+    }
+    Ok(())
 }
 
 fn copy_directory_contents(src: &Path, dst: &Path) -> Result<()> {
