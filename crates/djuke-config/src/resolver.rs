@@ -81,15 +81,48 @@ pub fn resolve_project_config(
     if let Some(tool) = build_tool {
         match tool {
             BuildTool::Gradle => {
+                let (gradle_run, gradle_dev) = {
+                    let build_gradle = markers.root.join("build.gradle");
+                    let build_kts = markers.root.join("build.gradle.kts");
+                    let content = std::fs::read_to_string(&build_gradle)
+                        .or_else(|_| std::fs::read_to_string(&build_kts))
+                        .unwrap_or_default();
+                    if content.contains("spring") {
+                        ("bootRun", "bootRun")
+                    } else if content.contains("quarkus") {
+                        ("quarkusDev", "quarkusDev")
+                    } else if content.contains("micronaut") {
+                        ("run", "run --continuous")
+                    } else {
+                        ("run", "run")
+                    }
+                };
+
                 tasks.insert("build".into(), "build".into());
                 tasks.insert("test".into(), "test".into());
-                tasks.insert("run".into(), "run".into());
+                tasks.insert("run".into(), gradle_run.into());
+                tasks.insert("dev".into(), gradle_dev.into());
                 tasks.insert("clean".into(), "clean".into());
             }
             BuildTool::Maven => {
+                let (maven_run, maven_dev) = {
+                    let pom = markers.root.join("pom.xml");
+                    let content = std::fs::read_to_string(&pom).unwrap_or_default();
+                    if content.contains("spring-boot") {
+                        ("spring-boot:run", "spring-boot:run")
+                    } else if content.contains("quarkus") {
+                        ("quarkus:dev", "quarkus:dev")
+                    } else if content.contains("micronaut") {
+                        ("exec:java", "mn:run")
+                    } else {
+                        ("compile exec:java", "compile exec:java")
+                    }
+                };
+
                 tasks.insert("build".into(), "clean package".into());
                 tasks.insert("test".into(), "test".into());
-                tasks.insert("run".into(), "exec:java".into());
+                tasks.insert("run".into(), maven_run.into());
+                tasks.insert("dev".into(), maven_dev.into());
                 tasks.insert("clean".into(), "clean".into());
             }
         }
