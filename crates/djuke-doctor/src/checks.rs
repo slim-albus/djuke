@@ -60,9 +60,15 @@ impl DoctorReport {
         } else {
             println!(
                 "{}",
-                "⚠ Some checks failed. Review the hints above to resolve."
+                "⚠ Environment is not ready for Java development. Resolve the issues above."
                     .yellow()
                     .bold()
+            );
+            println!(
+                "  {} Run '{}' or '{}' to install a managed JDK.\n",
+                "Tip:".cyan().bold(),
+                "djuke java install 21".green(),
+                "djuke setup".green()
             );
         }
         println!();
@@ -127,14 +133,14 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
     let jdk_msg = if has_jdks {
         format!("{} JDK(s) managed locally", installed.len())
     } else {
-        "No JDKs currently installed in djuke cache".into()
+        "No JDKs currently installed in djuke store".into()
     };
     checks.push(HealthCheckResult {
         name: "Installed JDKs".into(),
-        status: true,
+        status: has_jdks,
         message: jdk_msg,
         hint: if !has_jdks {
-            Some("Run 'djuke java install 21' to install a recommended LTS JDK".into())
+            Some("Run 'djuke java install 21' or 'djuke java install latest' to install a JDK".into())
         } else {
             None
         },

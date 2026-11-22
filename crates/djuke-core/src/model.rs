@@ -16,6 +16,9 @@ pub enum JdkDistribution {
     Microsoft,
     Semeru,
     Graalvm,
+    Liberica,
+    Oracle,
+    Sapmachine,
 }
 
 impl JdkDistribution {
@@ -27,11 +30,28 @@ impl JdkDistribution {
             Self::Microsoft => "microsoft",
             Self::Semeru => "semeru",
             Self::Graalvm => "graalvm_ce",
+            Self::Liberica => "liberica",
+            Self::Oracle => "oracle",
+            Self::Sapmachine => "sap_machine",
         }
     }
 
     pub fn default_distro() -> Self {
         Self::Temurin
+    }
+
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::Temurin,
+            Self::Corretto,
+            Self::Zulu,
+            Self::Microsoft,
+            Self::Semeru,
+            Self::Graalvm,
+            Self::Liberica,
+            Self::Oracle,
+            Self::Sapmachine,
+        ]
     }
 }
 
@@ -44,6 +64,9 @@ impl fmt::Display for JdkDistribution {
             Self::Microsoft => write!(f, "microsoft"),
             Self::Semeru => write!(f, "semeru"),
             Self::Graalvm => write!(f, "graalvm"),
+            Self::Liberica => write!(f, "liberica"),
+            Self::Oracle => write!(f, "oracle"),
+            Self::Sapmachine => write!(f, "sapmachine"),
         }
     }
 }
@@ -59,8 +82,11 @@ impl FromStr for JdkDistribution {
             "microsoft" | "ms" => Ok(Self::Microsoft),
             "semeru" | "ibm" => Ok(Self::Semeru),
             "graalvm" | "graal" => Ok(Self::Graalvm),
+            "liberica" | "bellsoft" => Ok(Self::Liberica),
+            "oracle" => Ok(Self::Oracle),
+            "sapmachine" | "sap" | "sap_machine" => Ok(Self::Sapmachine),
             other => Err(DjukeError::InvalidJdkSpec(format!(
-                "Unknown distribution '{}'. Supported: temurin, corretto, zulu, microsoft, semeru, graalvm",
+                "Unknown distribution '{}'. Supported: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine",
                 other
             ))),
         }
