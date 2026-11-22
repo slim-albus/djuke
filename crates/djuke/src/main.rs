@@ -58,7 +58,7 @@ enum Commands {
         #[arg(
             short,
             long,
-            help = "Template type: cli, lib, spring-boot, quarkus, micronaut"
+            help = "Template type: cli, lib, spring-boot, quarkus, micronaut, javalin, grpc, picocli, multi-module"
         )]
         template: Option<String>,
 
@@ -102,7 +102,7 @@ enum Commands {
         #[arg(
             short,
             long,
-            help = "Template type: cli, lib, spring-boot, quarkus, micronaut"
+            help = "Template type: cli, lib, spring-boot, quarkus, micronaut, javalin, grpc, picocli, multi-module"
         )]
         template: Option<String>,
 
@@ -137,9 +137,9 @@ enum Commands {
     #[command(about = "Add a dependency to the current project (Maven or Gradle)")]
     Add {
         #[arg(
-            help = "Dependency coordinate (e.g. 'org.postgresql:postgresql', 'com.google.guava:guava:33.3.1-jre', or 'guava')"
+            help = "Dependency coordinate (e.g. 'org.postgresql:postgresql', 'guava', 'lombok')"
         )]
-        dependency: String,
+        dependency: Option<String>,
 
         #[arg(
             short,
@@ -156,7 +156,7 @@ enum Commands {
     #[command(about = "Remove a dependency from the current project")]
     Remove {
         #[arg(help = "Dependency coordinate or groupId:artifactId to remove")]
-        dependency: String,
+        dependency: Option<String>,
     },
 
     #[command(about = "Search Maven Central for packages and libraries")]
@@ -486,7 +486,7 @@ enum JavaSubcommands {
     #[command(about = "Set the active Java version for project or globally")]
     Use {
         #[arg(help = "JDK specification e.g. '21', 'latest', 'temurin@21'")]
-        spec: String,
+        spec: Option<String>,
 
         #[arg(
             short,
@@ -500,6 +500,21 @@ enum JavaSubcommands {
             help = "Set as global default instead of modifying local project"
         )]
         global: bool,
+    },
+
+    #[command(about = "View or configure the global default Java version and distribution")]
+    Default {
+        #[arg(
+            help = "JDK specification to set as default, e.g. '21', '25', 'temurin@21', 'corretto@latest'"
+        )]
+        spec: Option<String>,
+
+        #[arg(
+            short = 'd',
+            long = "distro",
+            help = "JDK distribution: temurin, openjdk, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+        )]
+        distro: Option<JdkDistribution>,
     },
 
     #[command(about = "Show the currently resolved Java runtime")]
@@ -524,16 +539,17 @@ struct CliProjectOptions {
     yes: bool,
 }
 
-fn resolve_project_options(
-    opts: CliProjectOptions,
-) -> Result<(
-    String,
-    djuke_templates::TemplateType,
-    djuke_templates::BuildToolChoice,
-    String,
-    String,
-    Option<JdkDistribution>,
-)> {
+struct ResolvedProjectInitOptions {
+    name: String,
+    template: djuke_templates::TemplateType,
+    build_tool: djuke_templates::BuildToolChoice,
+    group_id: String,
+    java_ver: String,
+    distro_choice: Option<JdkDistribution>,
+    initializr_deps: Option<Vec<String>>,
+}
+
+fn resolve_project_options(opts: CliProjectOptions) -> Result<ResolvedProjectInitOptions> {
     let is_interactive = !opts.yes && std::io::stdin().is_terminal();
     let theme = dialoguer::theme::ColorfulTheme::default();
 
@@ -576,9 +592,13 @@ fn resolve_project_options(
                 let templates = [
                     "CLI Application        - Minimal Java console app with Main class (Java 8 - 27+)",
                     "Library                - Reusable Java library with JUnit 5 test suite (Java 8 - 27+)",
-                    "Spring Boot Web API    - Full-stack web application with Spring Boot 3.4 & Actuator (Java 17 - 25)",
+                    "Spring Boot Web API    - Full-stack web app with Spring Boot (Spring Initializr / Java 17 - 27)",
                     "Quarkus REST API       - Supersonic Subatomic reactive microservice (Java 17 - 23)",
                     "Micronaut Microservice - Cloud-native modular Java application (Java 17 - 23)",
+                    "Javalin REST API       - Lightweight, ultra-fast embedded REST API with Jetty (Java 11 - 27+)",
+                    "gRPC Microservice      - High-performance Protocol Buffers & gRPC service (Java 11 - 27+)",
+                    "Picocli CLI            - Production command-line app with annotations & colors (Java 8 - 27+)",
+                    "Multi-Module Project   - Enterprise modular architecture (core library + api service) (Java 8 - 27+)",
                 ];
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select project template")
@@ -592,6 +612,10 @@ fn resolve_project_options(
                     2 => djuke_templates::TemplateType::SpringBoot,
                     3 => djuke_templates::TemplateType::Quarkus,
                     4 => djuke_templates::TemplateType::Micronaut,
+                    5 => djuke_templates::TemplateType::Javalin,
+                    6 => djuke_templates::TemplateType::Grpc,
+                    7 => djuke_templates::TemplateType::Picocli,
+                    8 => djuke_templates::TemplateType::MultiModule,
                     _ => djuke_templates::TemplateType::Cli,
                 }
             } else {
@@ -739,7 +763,38 @@ fn resolve_project_options(
         }
     };
 
-    Ok((name, template, build_tool, group, java, distro))
+    // 7. Resolve Spring Boot dependencies if applicable
+    let initializr_deps = if template == djuke_templates::TemplateType::SpringBoot && is_interactive
+    {
+        let input: String = dialoguer::Input::with_theme(&theme)
+            .with_prompt("Spring Boot starter dependencies (comma-separated, press Enter for default: web,actuator)")
+            .allow_empty(true)
+            .interact_text()
+            .unwrap_or_default();
+        if input.trim().is_empty() {
+            Some(vec!["web".into(), "actuator".into()])
+        } else {
+            Some(
+                input
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+            )
+        }
+    } else {
+        None
+    };
+
+    Ok(ResolvedProjectInitOptions {
+        name,
+        template,
+        build_tool,
+        group_id: group,
+        java_ver: java,
+        distro_choice: distro,
+        initializr_deps,
+    })
 }
 
 #[tokio::main]
@@ -776,20 +831,19 @@ async fn main() -> Result<()> {
             distro,
             yes,
         } => {
-            let (proj_name, t_type, b_tool, group_id, java_ver, distro_choice) =
-                resolve_project_options(CliProjectOptions {
-                    is_init: false,
-                    current_dir: current_dir.clone(),
-                    name,
-                    template,
-                    build_tool,
-                    group,
-                    java,
-                    distro,
-                    yes,
-                })?;
+            let init_opts = resolve_project_options(CliProjectOptions {
+                is_init: false,
+                current_dir: current_dir.clone(),
+                name,
+                template,
+                build_tool,
+                group,
+                java,
+                distro,
+                yes,
+            })?;
 
-            let dest = current_dir.join(&proj_name);
+            let dest = current_dir.join(&init_opts.name);
             if dest.exists()
                 && dest
                     .read_dir()
@@ -805,21 +859,24 @@ async fn main() -> Result<()> {
 
             println!(
                 "{}",
-                format!("Creating new Java {} project '{}'...", t_type, proj_name)
-                    .bold()
-                    .cyan()
+                format!(
+                    "Creating new Java {} project '{}'...",
+                    init_opts.template, init_opts.name
+                )
+                .bold()
+                .cyan()
             );
 
-            let resolved_java = if java_ver.eq_ignore_ascii_case("latest")
-                || java_ver.eq_ignore_ascii_case("lts")
+            let resolved_java = if init_opts.java_ver.eq_ignore_ascii_case("latest")
+                || init_opts.java_ver.eq_ignore_ascii_case("lts")
             {
                 let disco = djuke_jdk::DiscoClient::new();
-                disco.resolve_version_alias(&java_ver).await
+                disco.resolve_version_alias(&init_opts.java_ver).await
             } else {
-                java_ver
+                init_opts.java_ver
             };
 
-            let framework_version = match t_type {
+            let framework_version = match init_opts.template {
                 djuke_templates::TemplateType::SpringBoot => {
                     let central = djuke_pm::MavenCentralClient::new();
                     central
@@ -848,20 +905,22 @@ async fn main() -> Result<()> {
             };
 
             let opts = djuke_templates::NewProjectOptions {
-                name: proj_name.clone(),
-                group_id,
-                template: t_type,
-                build_tool: b_tool,
+                name: init_opts.name.clone(),
+                group_id: init_opts.group_id,
+                template: init_opts.template,
+                build_tool: init_opts.build_tool,
                 java_version: resolved_java,
-                distribution: distro_choice,
+                distribution: init_opts.distro_choice,
                 destination: dest.clone(),
                 framework_version,
+                initializr_dependencies: init_opts.initializr_deps,
+                skip_initializr: false,
             };
 
             let java_str = opts.java_version.clone();
-            djuke_templates::generate_project(&opts)?;
+            djuke_templates::generate_project(&opts).await?;
 
-            let tool_enum = match b_tool {
+            let tool_enum = match init_opts.build_tool {
                 djuke_templates::BuildToolChoice::GradleKts
                 | djuke_templates::BuildToolChoice::GradleGroovy => djuke_core::BuildTool::Gradle,
                 djuke_templates::BuildToolChoice::Maven => djuke_core::BuildTool::Maven,
@@ -888,7 +947,8 @@ async fn main() -> Result<()> {
 
             // 2. Resolve JDK and immediately prime/cache the wrapper distribution
             let jdk_spec = djuke_core::JdkSpec {
-                distribution: distro_choice
+                distribution: init_opts
+                    .distro_choice
                     .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
                 version: java_str,
             };
@@ -910,7 +970,7 @@ async fn main() -> Result<()> {
                     .bold()
             );
             println!("\nNext steps:");
-            println!("  cd {}", proj_name.bold());
+            println!("  cd {}", init_opts.name.bold());
             println!("  djuke run\n");
         }
 
@@ -923,39 +983,38 @@ async fn main() -> Result<()> {
             distro,
             yes,
         } => {
-            let (proj_name, t_type, b_tool, group_id, java_ver, distro_choice) =
-                resolve_project_options(CliProjectOptions {
-                    is_init: true,
-                    current_dir: current_dir.clone(),
-                    name,
-                    template,
-                    build_tool,
-                    group,
-                    java,
-                    distro,
-                    yes,
-                })?;
+            let init_opts = resolve_project_options(CliProjectOptions {
+                is_init: true,
+                current_dir: current_dir.clone(),
+                name,
+                template,
+                build_tool,
+                group,
+                java,
+                distro,
+                yes,
+            })?;
 
             println!(
                 "{}",
                 format!(
                     "Initializing Java {} project '{}' in current directory...",
-                    t_type, proj_name
+                    init_opts.template, init_opts.name
                 )
                 .bold()
                 .cyan()
             );
 
-            let resolved_java = if java_ver.eq_ignore_ascii_case("latest")
-                || java_ver.eq_ignore_ascii_case("lts")
+            let resolved_java = if init_opts.java_ver.eq_ignore_ascii_case("latest")
+                || init_opts.java_ver.eq_ignore_ascii_case("lts")
             {
                 let disco = djuke_jdk::DiscoClient::new();
-                disco.resolve_version_alias(&java_ver).await
+                disco.resolve_version_alias(&init_opts.java_ver).await
             } else {
-                java_ver
+                init_opts.java_ver
             };
 
-            let framework_version = match t_type {
+            let framework_version = match init_opts.template {
                 djuke_templates::TemplateType::SpringBoot => {
                     let central = djuke_pm::MavenCentralClient::new();
                     central
@@ -984,20 +1043,22 @@ async fn main() -> Result<()> {
             };
 
             let opts = djuke_templates::NewProjectOptions {
-                name: proj_name.clone(),
-                group_id,
-                template: t_type,
-                build_tool: b_tool,
+                name: init_opts.name.clone(),
+                group_id: init_opts.group_id,
+                template: init_opts.template,
+                build_tool: init_opts.build_tool,
                 java_version: resolved_java,
-                distribution: distro_choice,
+                distribution: init_opts.distro_choice,
                 destination: current_dir.clone(),
                 framework_version,
+                initializr_dependencies: init_opts.initializr_deps,
+                skip_initializr: false,
             };
 
             let java_str = opts.java_version.clone();
-            djuke_templates::generate_project(&opts)?;
+            djuke_templates::generate_project(&opts).await?;
 
-            let tool_enum = match b_tool {
+            let tool_enum = match init_opts.build_tool {
                 djuke_templates::BuildToolChoice::GradleKts
                 | djuke_templates::BuildToolChoice::GradleGroovy => djuke_core::BuildTool::Gradle,
                 djuke_templates::BuildToolChoice::Maven => djuke_core::BuildTool::Maven,
@@ -1024,7 +1085,8 @@ async fn main() -> Result<()> {
 
             // 2. Resolve JDK and immediately prime/cache the wrapper distribution
             let jdk_spec = djuke_core::JdkSpec {
-                distribution: distro_choice
+                distribution: init_opts
+                    .distro_choice
                     .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
                 version: java_str,
             };
@@ -1054,7 +1116,54 @@ async fn main() -> Result<()> {
             scope,
             test,
         } => {
-            let mut spec: djuke_pm::DependencySpec = dependency.parse()?;
+            let dep_input = match dependency {
+                Some(d) if !d.trim().is_empty() => d.trim().to_string(),
+                _ => {
+                    let is_interactive = std::io::stdin().is_terminal();
+                    if is_interactive {
+                        let theme = dialoguer::theme::ColorfulTheme::default();
+                        let search_query: String = dialoguer::Input::with_theme(&theme)
+                            .with_prompt("Search Maven Central for library to add")
+                            .interact_text()
+                            .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                        let central = djuke_pm::MavenCentralClient::new();
+                        let docs = central.search(&search_query, 5).await?;
+                        if docs.is_empty() {
+                            return Err(DjukeError::Generic(format!(
+                                "No artifacts found matching '{}'",
+                                search_query
+                            ))
+                            .into());
+                        }
+                        let items: Vec<String> = docs
+                            .iter()
+                            .map(|d| {
+                                format!(
+                                    "{}:{} ({})",
+                                    d.group_id,
+                                    d.artifact_id,
+                                    d.latest_version.as_deref().unwrap_or("-")
+                                )
+                            })
+                            .collect();
+                        let idx = dialoguer::Select::with_theme(&theme)
+                            .with_prompt("Select dependency to add")
+                            .items(&items)
+                            .default(0)
+                            .interact()
+                            .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                        format!("{}:{}", docs[idx].group_id, docs[idx].artifact_id)
+                    } else {
+                        return Err(DjukeError::Generic(
+                            "Please provide a dependency coordinate (e.g. 'guava' or 'org.postgresql:postgresql')".into(),
+                        )
+                        .into());
+                    }
+                }
+            };
+
+            let canonical_dep = resolve_dependency_alias(&dep_input);
+            let mut spec: djuke_pm::DependencySpec = canonical_dep.parse()?;
             if test {
                 spec.scope = djuke_pm::DependencyScope::Test;
             } else {
@@ -1125,27 +1234,69 @@ async fn main() -> Result<()> {
         }
 
         Commands::Remove { dependency } => {
-            let parts: Vec<&str> = dependency.split(':').collect();
-            if parts.len() < 2 {
-                return Err(
-                    DjukeError::Generic("Please provide 'groupId:artifactId'".into()).into(),
-                );
-            }
-            let group = parts[0].trim();
-            let artifact = parts[1].trim();
-
             let config = resolve_project_config(&current_dir, None, &paths);
+            let dep_str = match dependency {
+                Some(d) if !d.trim().is_empty() => d.trim().to_string(),
+                _ => {
+                    let deps = djuke_pm::extract_project_dependencies(&config.project_root)?;
+                    if deps.is_empty() {
+                        return Err(DjukeError::Generic(
+                            "No dependencies found in project to remove.".into(),
+                        )
+                        .into());
+                    }
+                    let is_interactive = std::io::stdin().is_terminal();
+                    if is_interactive {
+                        let theme = dialoguer::theme::ColorfulTheme::default();
+                        let items: Vec<String> = deps
+                            .iter()
+                            .map(|d| format!("{}:{}", d.group_id, d.artifact_id))
+                            .collect();
+                        let idx = dialoguer::Select::with_theme(&theme)
+                            .with_prompt("Select dependency to remove")
+                            .items(&items)
+                            .default(0)
+                            .interact()
+                            .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                        items[idx].clone()
+                    } else {
+                        return Err(DjukeError::Generic(
+                            "Please provide dependency to remove".into(),
+                        )
+                        .into());
+                    }
+                }
+            };
+
+            let (group, artifact) = if dep_str.contains(':') {
+                let parts: Vec<&str> = dep_str.split(':').collect();
+                (parts[0].trim().to_string(), parts[1].trim().to_string())
+            } else {
+                let deps = djuke_pm::extract_project_dependencies(&config.project_root)?;
+                let matched = deps
+                    .iter()
+                    .find(|d| d.artifact_id.eq_ignore_ascii_case(&dep_str));
+                if let Some(m) = matched {
+                    (m.group_id.clone(), m.artifact_id.clone())
+                } else {
+                    return Err(DjukeError::Generic(format!(
+                        "Could not find dependency matching '{}' in project. Provide 'groupId:artifactId'.",
+                        dep_str
+                    )).into());
+                }
+            };
+
             match config.build_tool {
                 Some(BuildTool::Maven) => {
                     let pom_path = config.project_root.join("pom.xml");
-                    djuke_pm::remove_maven_dependency(&pom_path, group, artifact)?;
+                    djuke_pm::remove_maven_dependency(&pom_path, &group, &artifact)?;
                     println!("✔ Removed {}:{} from pom.xml", group, artifact);
                 }
                 Some(BuildTool::Gradle) | None => {
                     let kts = config.project_root.join("build.gradle.kts");
                     let groovy = config.project_root.join("build.gradle");
                     let build_file = if kts.is_file() { kts } else { groovy };
-                    djuke_pm::remove_gradle_dependency(&build_file, group, artifact)?;
+                    djuke_pm::remove_gradle_dependency(&build_file, &group, &artifact)?;
                     println!(
                         "✔ Removed {}:{} from {}",
                         group,
@@ -1179,11 +1330,37 @@ async fn main() -> Result<()> {
                     "------------------------------------------------------------------------"
                         .cyan()
                 );
-                for doc in docs {
+                for doc in &docs {
                     let coord = format!("{}:{}", doc.group_id, doc.artifact_id);
-                    let ver = doc.latest_version.unwrap_or_else(|| "-".into());
-                    let pkg = doc.packaging.unwrap_or_else(|| "jar".into());
+                    let ver = doc.latest_version.as_deref().unwrap_or("-");
+                    let pkg = doc.packaging.as_deref().unwrap_or("jar");
                     println!("{:<45} {:<15} {}", coord.green(), ver.bold(), pkg);
+                }
+
+                if let Some(top) = docs.first() {
+                    let ver = top.latest_version.as_deref().unwrap_or("RELEASE");
+                    println!("\n{}", "Quick Snippets:".bold().cyan());
+                    println!(
+                        "  {} implementation(\"{}:{}:{}\")",
+                        "Gradle (Kotlin):".yellow(),
+                        top.group_id,
+                        top.artifact_id,
+                        ver
+                    );
+                    println!(
+                        "  {} implementation '{}:{}:{}'",
+                        "Gradle (Groovy):".yellow(),
+                        top.group_id,
+                        top.artifact_id,
+                        ver
+                    );
+                    println!("  {} <dependency><groupId>{}</groupId><artifactId>{}</artifactId><version>{}</version></dependency>", "Maven (pom.xml):".yellow(), top.group_id, top.artifact_id, ver);
+                    println!(
+                        "  {} djuke add {}:{}",
+                        "djuke add:".yellow(),
+                        top.group_id,
+                        top.artifact_id
+                    );
                 }
             }
         }
@@ -1262,7 +1439,30 @@ async fn main() -> Result<()> {
                         .collect();
                     candidates.sort_by_key(|a| std::cmp::Reverse(a.major_version));
 
-                    for mv in candidates.into_iter().take(10) {
+                    // Ensure key releases (27, 25, 23, 21, 17, 11, 8) are always included if applicable
+                    let known_majors: &[u32] = if lts {
+                        &[25, 21, 17, 11, 8]
+                    } else {
+                        &[27, 25, 23, 21, 17, 11, 8]
+                    };
+                    for &km in known_majors {
+                        if !candidates.iter().any(|c| c.major_version == km) {
+                            candidates.push(DiscoMajorVersion {
+                                major_version: km,
+                                term_of_support: if [25, 21, 17, 11, 8].contains(&km) {
+                                    Some("LTS".into())
+                                } else {
+                                    Some("STS".into())
+                                },
+                                maintained: Some(true),
+                                release_status: Some("ga".into()),
+                                early_access_only: Some(false),
+                            });
+                        }
+                    }
+                    candidates.sort_by_key(|a| std::cmp::Reverse(a.major_version));
+
+                    for mv in candidates.into_iter().take(12) {
                         let ver_str = mv.major_version.to_string();
                         if let Ok(packages) =
                             disco.query_packages(&ver_str, query_distro, platform).await
@@ -1281,6 +1481,21 @@ async fn main() -> Result<()> {
                     }
                 } else {
                     let installed = store.list_installed()?;
+                    let config = resolve_project_config(&current_dir, None, &paths);
+                    let global_config =
+                        djuke_config::global::load_global_config(&paths.config_file())
+                            .unwrap_or_default();
+                    let (g_distro, g_ver) = match &global_config.java {
+                        Some(j) => (
+                            j.default_distribution
+                                .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
+                            j.default_version
+                                .clone()
+                                .unwrap_or_else(|| "21".to_string()),
+                        ),
+                        None => (djuke_core::JdkDistribution::Temurin, "21".to_string()),
+                    };
+
                     if cli.json {
                         println!(
                             "{}",
@@ -1297,13 +1512,33 @@ async fn main() -> Result<()> {
                     } else {
                         println!("{}", "Installed JDKs:".bold().cyan());
                         for jdk in installed {
+                            let is_active = (jdk.distribution == config.jdk_spec.distribution
+                                && jdk.version == config.jdk_spec.version)
+                                || jdk.version.starts_with(&config.jdk_spec.version);
+                            let is_global = (jdk.distribution == g_distro && jdk.version == g_ver)
+                                || jdk.version.starts_with(&g_ver);
+
+                            let mut badges = Vec::new();
+                            if is_active {
+                                badges.push("* [active: project]".green().bold().to_string());
+                            }
+                            if is_global {
+                                badges.push("+ [default: global]".cyan().bold().to_string());
+                            }
+                            let badge_str = if badges.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" {}", badges.join(" "))
+                            };
+
                             println!(
-                                "  {} {} ({}) -> {}",
+                                "  {} {} ({}){} -> {}",
                                 "•".cyan(),
                                 format!("{}@{}", jdk.distribution, jdk.version)
                                     .green()
                                     .bold(),
                                 jdk.major_version,
+                                badge_str,
                                 jdk.java_home.display()
                             );
                         }
@@ -1326,12 +1561,131 @@ async fn main() -> Result<()> {
                 }
             }
 
+            JavaSubcommands::Default { spec, distro } => {
+                let mut cfg = djuke_config::global::load_global_config(&paths.config_file())?;
+                match spec {
+                    None => {
+                        let (d, v, source) = match &cfg.java {
+                            Some(j) => (
+                                j.default_distribution
+                                    .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
+                                j.default_version
+                                    .clone()
+                                    .unwrap_or_else(|| "21".to_string()),
+                                format!("Config file ({})", paths.config_file().display()),
+                            ),
+                            None => (
+                                djuke_core::JdkDistribution::Temurin,
+                                "21".to_string(),
+                                "Default fallback".to_string(),
+                            ),
+                        };
+                        let store = JdkStore::new(paths.clone());
+                        let global_spec = djuke_core::JdkSpec::new(d, v.clone());
+                        let installed = store.find_installed(&global_spec);
+
+                        if cli.json {
+                            let json_data = serde_json::json!({
+                                "distribution": d.to_string(),
+                                "version": v,
+                                "source": source,
+                                "installed": installed.is_some(),
+                                "java_home": installed.as_ref().map(|i| i.java_home.display().to_string()),
+                            });
+                            println!("{}", serde_json::to_string_pretty(&json_data).unwrap());
+                        } else {
+                            println!("{}", "Global Default Java Configuration:".bold().cyan());
+                            println!("  • Runtime:    {}", format!("{}@{}", d, v).green().bold());
+                            println!("  • Source:     {}", source);
+                            if let Some(i) = installed {
+                                println!(
+                                    "  • Status:     {} ({})",
+                                    "Installed".green().bold(),
+                                    i.java_home.display()
+                                );
+                            } else {
+                                println!(
+                                    "  • Status:     {}",
+                                    "Not installed locally".yellow().bold()
+                                );
+                                println!(
+                                    "  Run '{}' to install and activate.",
+                                    format!("djuke java default {}", v).green()
+                                );
+                            }
+                        }
+                    }
+                    Some(s) => {
+                        let mut parsed_spec: JdkSpec = s.parse()?;
+                        if let Some(d) = distro {
+                            parsed_spec.distribution = d;
+                        }
+                        let installed = resolve_jdk(&parsed_spec, &paths, true, cli.quiet).await?;
+                        let mut j = cfg.java.unwrap_or_default();
+                        j.default_version = Some(parsed_spec.version.clone());
+                        j.default_distribution = Some(parsed_spec.distribution);
+                        cfg.java = Some(j);
+                        djuke_config::global::save_global_config(&paths.config_file(), &cfg)?;
+                        println!(
+                            "✔ Set global default Java to {}@{}",
+                            parsed_spec.distribution, parsed_spec.version
+                        );
+                        println!("  JAVA_HOME: {}", installed.java_home.display());
+                    }
+                }
+            }
+
             JavaSubcommands::Use {
                 spec,
                 distro,
                 global,
             } => {
-                let mut parsed_spec: JdkSpec = spec.parse()?;
+                let spec_str = match spec {
+                    Some(s) => s,
+                    None => {
+                        let store = JdkStore::new(paths.clone());
+                        let installed = store.list_installed()?;
+                        if installed.is_empty() {
+                            return Err(DjukeError::Generic(
+                                "No JDKs installed locally. Run 'djuke java install 21' first."
+                                    .into(),
+                            )
+                            .into());
+                        }
+                        let is_interactive = std::io::stdin().is_terminal();
+                        if is_interactive {
+                            let items: Vec<String> = installed
+                                .iter()
+                                .map(|i| {
+                                    format!(
+                                        "{}@{} ({}) -> {}",
+                                        i.distribution,
+                                        i.version,
+                                        i.major_version,
+                                        i.java_home.display()
+                                    )
+                                })
+                                .collect();
+                            let theme = dialoguer::theme::ColorfulTheme::default();
+                            let idx = dialoguer::Select::with_theme(&theme)
+                                .with_prompt("Select installed JDK to use")
+                                .items(&items)
+                                .default(0)
+                                .interact()
+                                .map_err(|e| {
+                                    DjukeError::Process(format!("Prompt failed: {}", e))
+                                })?;
+                            format!("{}@{}", installed[idx].distribution, installed[idx].version)
+                        } else {
+                            return Err(DjukeError::Generic(
+                                "Please specify a JDK spec, e.g. 'djuke java use 21'.".into(),
+                            )
+                            .into());
+                        }
+                    }
+                };
+
+                let mut parsed_spec: JdkSpec = spec_str.parse()?;
                 if let Some(d) = distro {
                     parsed_spec.distribution = d;
                 }
@@ -1382,6 +1736,7 @@ async fn main() -> Result<()> {
                         "spec": format!("{}", config.jdk_spec),
                         "distribution": config.jdk_spec.distribution.to_string(),
                         "version": config.jdk_spec.version,
+                        "resolution_source": format!("{}", config.jdk_source),
                         "installed": installed.is_some(),
                         "java_home": installed.as_ref().map(|i| i.java_home.display().to_string())
                     });
@@ -1392,11 +1747,13 @@ async fn main() -> Result<()> {
                         format!("{}@{}", i.distribution, i.version).green().bold(),
                         i.java_home.display()
                     );
+                    println!("Resolved from: {}", format!("{}", config.jdk_source).cyan());
                 } else {
                     println!(
                         "Configured Java: {} (not installed locally)",
                         format!("{}", config.jdk_spec).yellow()
                     );
+                    println!("Resolved from: {}", format!("{}", config.jdk_source).cyan());
                     println!("Run '{}' to install.", "djuke setup".green());
                 }
             }
@@ -1817,12 +2174,26 @@ async fn main() -> Result<()> {
             if let Some(installed) = store.find_installed(&config.jdk_spec) {
                 let java_home = installed.java_home.display();
                 let bin_dir = installed.java_home.join("bin").display().to_string();
-                let shell_type = shell.unwrap_or_else(|| "bash".into());
+                let shell_type = shell.unwrap_or_else(|| {
+                    if cfg!(windows) {
+                        "powershell".into()
+                    } else {
+                        "bash".into()
+                    }
+                });
 
                 match shell_type.as_str() {
                     "powershell" | "pwsh" => {
                         println!("$env:JAVA_HOME = \"{}\"", java_home);
                         println!("$env:PATH = \"{};$env:PATH\"", bin_dir);
+                    }
+                    "cmd" | "batch" => {
+                        println!("set \"JAVA_HOME={}\"", java_home);
+                        println!("set \"PATH={};%PATH%\"", bin_dir);
+                    }
+                    "fish" => {
+                        println!("set -gx JAVA_HOME \"{}\"", java_home);
+                        println!("set -gx PATH \"{}\" $PATH", bin_dir);
                     }
                     _ => {
                         println!("export JAVA_HOME=\"{}\"", java_home);
@@ -1894,6 +2265,30 @@ async fn run_task(
     }
 
     Ok(())
+}
+
+fn resolve_dependency_alias(input: &str) -> String {
+    let lower = input.to_ascii_lowercase();
+    match lower.as_str() {
+        "lombok" => "org.projectlombok:lombok".into(),
+        "guava" => "com.google.guava:guava".into(),
+        "jackson" | "jackson-databind" => "com.fasterxml.jackson.core:jackson-databind".into(),
+        "postgres" | "postgresql" => "org.postgresql:postgresql".into(),
+        "mysql" => "com.mysql:mysql-connector-j".into(),
+        "h2" => "com.h2database:h2".into(),
+        "sqlite" => "org.xerial:sqlite-jdbc".into(),
+        "junit" | "junit5" => "org.junit.jupiter:junit-jupiter".into(),
+        "mockito" => "org.mockito:mockito-core".into(),
+        "assertj" => "org.assertj:assertj-core".into(),
+        "slf4j" => "org.slf4j:slf4j-api".into(),
+        "logback" => "ch.qos.logback:logback-classic".into(),
+        "gson" => "com.google.code.gson:gson".into(),
+        "commons-lang" | "commons-lang3" => "org.apache.commons:commons-lang3".into(),
+        "dotenv" => "io.github.cdimascio:dotenv-java".into(),
+        "javalin" => "io.javalin:javalin".into(),
+        "picocli" => "info.picocli:picocli".into(),
+        _ => input.to_string(),
+    }
 }
 
 async fn run_raw_tool(

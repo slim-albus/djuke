@@ -11,6 +11,7 @@ djuke-platform.workspace = true
 djuke-jdk.workspace = true
 djuke-config.workspace = true
 djuke-build.workspace = true
+djuke-cache.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 colored.workspace = true

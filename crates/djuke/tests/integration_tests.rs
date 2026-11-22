@@ -169,8 +169,8 @@ async fn test_end_to_end_mock_wrapper_execution_and_env_injection() {
     assert!(recorded_java_home.contains("mock-jdk-21"));
 }
 
-#[test]
-fn test_end_to_end_scaffold_and_maven_dependency_lifecycle() {
+#[tokio::test]
+async fn test_end_to_end_scaffold_and_maven_dependency_lifecycle() {
     use djuke_pm::{
         add_maven_dependency, remove_maven_dependency, DependencyScope, DependencySpec,
     };
@@ -188,9 +188,11 @@ fn test_end_to_end_scaffold_and_maven_dependency_lifecycle() {
         distribution: None,
         destination: project_dir.clone(),
         framework_version: None,
+        initializr_dependencies: None,
+        skip_initializr: true,
     };
 
-    generate_project(&opts).unwrap();
+    generate_project(&opts).await.unwrap();
 
     let pom_file = project_dir.join("pom.xml");
     assert!(pom_file.is_file());
@@ -221,8 +223,8 @@ fn test_end_to_end_scaffold_and_maven_dependency_lifecycle() {
     assert!(!pom_after_remove.contains("<artifactId>postgresql</artifactId>"));
 }
 
-#[test]
-fn test_end_to_end_scaffold_and_gradle_kts_dependency_lifecycle() {
+#[tokio::test]
+async fn test_end_to_end_scaffold_and_gradle_kts_dependency_lifecycle() {
     use djuke_pm::{
         add_gradle_dependency, remove_gradle_dependency, DependencyScope, DependencySpec,
     };
@@ -240,9 +242,11 @@ fn test_end_to_end_scaffold_and_gradle_kts_dependency_lifecycle() {
         distribution: None,
         destination: project_dir.clone(),
         framework_version: None,
+        initializr_dependencies: None,
+        skip_initializr: true,
     };
 
-    generate_project(&opts).unwrap();
+    generate_project(&opts).await.unwrap();
 
     let build_file = project_dir.join("build.gradle.kts");
     assert!(build_file.is_file());
@@ -271,8 +275,8 @@ fn test_end_to_end_scaffold_and_gradle_kts_dependency_lifecycle() {
     assert!(!build_after_remove.contains("com.fasterxml.jackson.core:jackson-databind"));
 }
 
-#[test]
-fn test_end_to_end_project_init_in_place_and_dependency_tree() {
+#[tokio::test]
+async fn test_end_to_end_project_init_in_place_and_dependency_tree() {
     use djuke_pm::{extract_project_dependencies, render_dependency_tree};
     use djuke_templates::{generate_project, BuildToolChoice, NewProjectOptions, TemplateType};
 
@@ -288,9 +292,11 @@ fn test_end_to_end_project_init_in_place_and_dependency_tree() {
         distribution: None,
         destination: root.clone(),
         framework_version: None,
+        initializr_dependencies: None,
+        skip_initializr: true,
     };
 
-    generate_project(&opts).unwrap();
+    generate_project(&opts).await.unwrap();
     assert!(root.join("pom.xml").is_file());
     assert!(root.join("djuke.toml").is_file());
 
@@ -393,8 +399,8 @@ fn test_jdk_distribution_support_all_10_distros() {
     }
 }
 
-#[test]
-fn test_template_generation_with_custom_distro_and_latest_java() {
+#[tokio::test]
+async fn test_template_generation_with_custom_distro_and_latest_java() {
     use djuke_core::JdkDistribution;
     use djuke_templates::{generate_project, BuildToolChoice, NewProjectOptions, TemplateType};
 
@@ -410,9 +416,11 @@ fn test_template_generation_with_custom_distro_and_latest_java() {
         distribution: Some(JdkDistribution::Liberica),
         destination: project_dir.clone(),
         framework_version: None,
+        initializr_dependencies: None,
+        skip_initializr: true,
     };
 
-    generate_project(&opts).unwrap();
+    generate_project(&opts).await.unwrap();
 
     let djuke_toml = fs::read_to_string(project_dir.join("djuke.toml")).unwrap();
     assert!(djuke_toml.contains("distribution = \"liberica\""));
@@ -532,8 +540,8 @@ async fn test_dynamic_wrapper_version_resolution_and_caching() {
     assert_eq!(offline_g, g_ver);
 }
 
-#[test]
-fn test_template_generation_with_custom_dynamic_framework_version() {
+#[tokio::test]
+async fn test_template_generation_with_custom_dynamic_framework_version() {
     use djuke_templates::{generate_project, BuildToolChoice, NewProjectOptions, TemplateType};
 
     let dir = tempdir().unwrap();
@@ -548,10 +556,129 @@ fn test_template_generation_with_custom_dynamic_framework_version() {
         distribution: None,
         destination: project_dir.clone(),
         framework_version: Some("3.5.3".to_string()),
+        initializr_dependencies: None,
+        skip_initializr: true,
     };
 
-    generate_project(&opts).unwrap();
+    generate_project(&opts).await.unwrap();
 
     let build_kts = fs::read_to_string(project_dir.join("build.gradle.kts")).unwrap();
     assert!(build_kts.contains("3.5.3"));
+    assert!(project_dir.join(".editorconfig").is_file());
+    assert!(project_dir.join(".gitattributes").is_file());
+}
+
+#[tokio::test]
+async fn test_new_industry_templates_and_enterprise_configs() {
+    use djuke_templates::{generate_project, BuildToolChoice, NewProjectOptions, TemplateType};
+
+    let dir = tempdir().unwrap();
+
+    // 1. Javalin REST API
+    let javalin_dir = dir.path().join("javalin-test");
+    let javalin_opts = NewProjectOptions {
+        name: "javalin-test".to_string(),
+        group_id: "com.example.rest".to_string(),
+        template: TemplateType::Javalin,
+        build_tool: BuildToolChoice::GradleKts,
+        java_version: "21".to_string(),
+        distribution: None,
+        destination: javalin_dir.clone(),
+        framework_version: None,
+        initializr_dependencies: None,
+        skip_initializr: true,
+    };
+    generate_project(&javalin_opts).await.unwrap();
+    assert!(javalin_dir.join(".editorconfig").is_file());
+    assert!(javalin_dir.join(".gitattributes").is_file());
+    assert!(javalin_dir.join("src/main/resources/logback.xml").is_file());
+    let javalin_build = fs::read_to_string(javalin_dir.join("build.gradle.kts")).unwrap();
+    assert!(javalin_build.contains("io.javalin:javalin"));
+
+    // 2. Picocli CLI
+    let picocli_dir = dir.path().join("picocli-test");
+    let picocli_opts = NewProjectOptions {
+        name: "picocli-test".to_string(),
+        group_id: "com.example.cli".to_string(),
+        template: TemplateType::Picocli,
+        build_tool: BuildToolChoice::Maven,
+        java_version: "21".to_string(),
+        distribution: None,
+        destination: picocli_dir.clone(),
+        framework_version: None,
+        initializr_dependencies: None,
+        skip_initializr: true,
+    };
+    generate_project(&picocli_opts).await.unwrap();
+    let pom = fs::read_to_string(picocli_dir.join("pom.xml")).unwrap();
+    assert!(pom.contains("picocli"));
+
+    // 3. Multi-Module Project
+    let mm_dir = dir.path().join("multi-mod-test");
+    let mm_opts = NewProjectOptions {
+        name: "multi-mod-test".to_string(),
+        group_id: "com.example.mod".to_string(),
+        template: TemplateType::MultiModule,
+        build_tool: BuildToolChoice::GradleKts,
+        java_version: "21".to_string(),
+        distribution: None,
+        destination: mm_dir.clone(),
+        framework_version: None,
+        initializr_dependencies: None,
+        skip_initializr: true,
+    };
+    generate_project(&mm_opts).await.unwrap();
+    assert!(mm_dir.join("settings.gradle.kts").is_file());
+    assert!(mm_dir.join("core/build.gradle.kts").is_file());
+    assert!(mm_dir.join("api/build.gradle.kts").is_file());
+    assert!(mm_dir
+        .join("core/src/main/java/com/example/mod/core/DomainService.java")
+        .is_file());
+    assert!(mm_dir
+        .join("api/src/main/java/com/example/mod/api/App.java")
+        .is_file());
+}
+
+#[test]
+fn test_jdk_resolution_source_tracking() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+    let paths = DjukePaths {
+        root: root.join(".djuke-home"),
+    };
+    paths.ensure_dirs().unwrap();
+
+    // 1. Default fallback
+    let resolved = resolve_project_config(root, None, &paths);
+    assert_eq!(
+        resolved.jdk_source,
+        djuke_config::JdkResolutionSource::FallbackDefault
+    );
+
+    // 2. Project manifest djuke.toml
+    let manifest = root.join("djuke.toml");
+    fs::write(
+        &manifest,
+        r#"[project]
+name = "test"
+[java]
+version = "25"
+distribution = "corretto"
+"#,
+    )
+    .unwrap();
+    let resolved_proj = resolve_project_config(root, None, &paths);
+    assert_eq!(resolved_proj.jdk_spec.version, "25");
+    assert_eq!(
+        resolved_proj.jdk_source,
+        djuke_config::JdkResolutionSource::ProjectManifest(manifest.clone())
+    );
+
+    // 3. CLI override takes highest precedence
+    let resolved_cli = resolve_project_config(root, Some("temurin@17"), &paths);
+    assert_eq!(resolved_cli.jdk_spec.version, "17");
+    assert_eq!(
+        resolved_cli.jdk_source,
+        djuke_config::JdkResolutionSource::CliFlag
+    );
 }

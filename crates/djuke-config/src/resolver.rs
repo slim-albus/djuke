@@ -8,11 +8,35 @@ use crate::detect::detect_project_markers;
 use crate::global::load_global_config;
 use crate::manifest::find_manifest_file;
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum JdkResolutionSource {
+    CliFlag,
+    EnvironmentVariable,
+    ProjectManifest(PathBuf),
+    ProjectMarkerFile(String),
+    GlobalConfig(PathBuf),
+    FallbackDefault,
+}
+
+impl std::fmt::Display for JdkResolutionSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CliFlag => write!(f, "CLI flag (--java)"),
+            Self::EnvironmentVariable => write!(f, "Environment variable (DJUKE_JAVA)"),
+            Self::ProjectManifest(p) => write!(f, "Project manifest ({})", p.display()),
+            Self::ProjectMarkerFile(s) => write!(f, "Project version file ({})", s),
+            Self::GlobalConfig(p) => write!(f, "Global config ({})", p.display()),
+            Self::FallbackDefault => write!(f, "Default fallback (temurin@21)"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ResolvedProjectConfig {
     pub project_root: PathBuf,
     pub manifest_path: Option<PathBuf>,
     pub jdk_spec: JdkSpec,
+    pub jdk_source: JdkResolutionSource,
     pub build_tool: Option<BuildTool>,
     pub has_gradle_wrapper: bool,
     pub has_maven_wrapper: bool,
@@ -43,26 +67,39 @@ pub fn resolve_project_config_with_tool(
         .and_then(|p| crate::manifest::load_manifest(p).ok())
         .unwrap_or_default();
 
-    // 1. Resolve JDK version & distribution
-    let (distro, version) = if let Some(cli_val) = cli_java_override {
-        if let Ok(spec) = cli_val.parse::<JdkSpec>() {
+    // 1. Resolve JDK version & distribution & source
+    let (distro, version, jdk_source) = if let Some(cli_val) = cli_java_override {
+        let (d, v) = if let Ok(spec) = cli_val.parse::<JdkSpec>() {
             (spec.distribution, spec.version)
         } else {
             (JdkDistribution::default_distro(), cli_val.to_string())
-        }
+        };
+        (d, v, JdkResolutionSource::CliFlag)
     } else if let Ok(env_val) = std::env::var("DJUKE_JAVA") {
-        if let Ok(spec) = env_val.parse::<JdkSpec>() {
+        let (d, v) = if let Ok(spec) = env_val.parse::<JdkSpec>() {
             (spec.distribution, spec.version)
         } else {
             (JdkDistribution::default_distro(), env_val)
-        }
+        };
+        (d, v, JdkResolutionSource::EnvironmentVariable)
     } else if let Some(java_sec) = &manifest.java {
         let d = java_sec
             .distribution
             .unwrap_or_else(JdkDistribution::default_distro);
-        (d, java_sec.version.clone())
+        let path = manifest_path
+            .clone()
+            .unwrap_or_else(|| markers.root.join("djuke.toml"));
+        (
+            d,
+            java_sec.version.clone(),
+            JdkResolutionSource::ProjectManifest(path),
+        )
     } else if let Some(inferred_ver) = &markers.inferred_java_version {
-        (JdkDistribution::default_distro(), inferred_ver.clone())
+        (
+            JdkDistribution::default_distro(),
+            inferred_ver.clone(),
+            JdkResolutionSource::ProjectMarkerFile(".java-version / .sdkmanrc".into()),
+        )
     } else if let Some(g_java) = &global_config.java {
         let d = g_java
             .default_distribution
@@ -71,9 +108,13 @@ pub fn resolve_project_config_with_tool(
             .default_version
             .clone()
             .unwrap_or_else(|| "21".to_string());
-        (d, v)
+        (d, v, JdkResolutionSource::GlobalConfig(paths.config_file()))
     } else {
-        (JdkDistribution::Temurin, "21".to_string())
+        (
+            JdkDistribution::Temurin,
+            "21".to_string(),
+            JdkResolutionSource::FallbackDefault,
+        )
     };
 
     let jdk_spec = JdkSpec::new(distro, version);
@@ -147,6 +188,7 @@ pub fn resolve_project_config_with_tool(
         project_root: markers.root,
         manifest_path,
         jdk_spec,
+        jdk_source,
         build_tool,
         has_gradle_wrapper: markers.has_gradle_wrapper,
         has_maven_wrapper: markers.has_maven_wrapper,

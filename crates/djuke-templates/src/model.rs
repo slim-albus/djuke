@@ -13,6 +13,10 @@ pub enum TemplateType {
     SpringBoot,
     Quarkus,
     Micronaut,
+    Javalin,
+    Grpc,
+    Picocli,
+    MultiModule,
 }
 
 impl fmt::Display for TemplateType {
@@ -23,6 +27,10 @@ impl fmt::Display for TemplateType {
             Self::SpringBoot => write!(f, "spring-boot"),
             Self::Quarkus => write!(f, "quarkus"),
             Self::Micronaut => write!(f, "micronaut"),
+            Self::Javalin => write!(f, "javalin"),
+            Self::Grpc => write!(f, "grpc"),
+            Self::Picocli => write!(f, "picocli"),
+            Self::MultiModule => write!(f, "multi-module"),
         }
     }
 }
@@ -37,8 +45,12 @@ impl FromStr for TemplateType {
             "spring" | "spring-boot" | "springboot" => Ok(Self::SpringBoot),
             "quarkus" => Ok(Self::Quarkus),
             "micronaut" => Ok(Self::Micronaut),
+            "javalin" | "rest" | "embedded" => Ok(Self::Javalin),
+            "grpc" | "proto" | "protobuf" => Ok(Self::Grpc),
+            "picocli" | "cli-rich" | "cli-app" => Ok(Self::Picocli),
+            "multi-module" | "multimodule" | "modular" => Ok(Self::MultiModule),
             other => Err(DjukeError::Generic(format!(
-                "Unknown template '{}'. Available: cli, lib, spring-boot, quarkus, micronaut",
+                "Unknown template '{}'. Available: cli, lib, spring-boot, quarkus, micronaut, javalin, grpc, picocli, multi-module",
                 other
             ))),
         }
@@ -89,4 +101,31 @@ pub struct NewProjectOptions {
     pub distribution: Option<djuke_core::JdkDistribution>,
     pub destination: PathBuf,
     pub framework_version: Option<String>,
+    pub initializr_dependencies: Option<Vec<String>>,
+    pub skip_initializr: bool,
+}
+
+impl NewProjectOptions {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        name: impl Into<String>,
+        group_id: impl Into<String>,
+        template: TemplateType,
+        build_tool: BuildToolChoice,
+        java_version: impl Into<String>,
+        destination: PathBuf,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            group_id: group_id.into(),
+            template,
+            build_tool,
+            java_version: java_version.into(),
+            distribution: None,
+            destination,
+            framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: false,
+        }
+    }
 }

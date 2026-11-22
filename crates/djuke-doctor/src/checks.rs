@@ -1,8 +1,9 @@
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::process::Command;
 
-use djuke_config::resolve_project_config;
+use djuke_config::{load_global_config, resolve_project_config};
 use djuke_core::Result;
 use djuke_jdk::JdkStore;
 use djuke_platform::{DjukePaths, Platform};
@@ -100,30 +101,68 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
         },
     });
 
-    // 3. Network check (Foojay Disco API ping)
+    // 3. Network checks in parallel
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
+        .user_agent("djuke-doctor")
         .build()
         .unwrap_or_default();
 
-    let net_res = client
+    let disco_fut = client
         .get("https://api.foojay.io/disco/v3.0/major_versions")
-        .send()
-        .await;
-    let net_status = net_res.map(|r| r.status().is_success()).unwrap_or(false);
+        .send();
+    let central_fut = client.head("https://repo1.maven.org/maven2").send();
+    let initializr_fut = client.head("https://start.spring.io").send();
+
+    let (disco_res, central_res, initializr_res) =
+        tokio::join!(disco_fut, central_fut, initializr_fut);
+
+    let disco_ok = disco_res.map(|r| r.status().is_success()).unwrap_or(false);
     checks.push(HealthCheckResult {
-        name: "Disco API Connectivity".into(),
-        status: net_status,
-        message: if net_status {
-            "Foojay Disco API is reachable".into()
+        name: "Foojay Disco API".into(),
+        status: disco_ok,
+        message: if disco_ok {
+            "Reachable (JDK metadata & download index)".into()
         } else {
             "Cannot connect to api.foojay.io".into()
         },
-        hint: if !net_status {
-            Some("Check your internet connection or proxy settings".into())
+        hint: if !disco_ok {
+            Some("Check internet connectivity or proxy settings".into())
         } else {
             None
         },
+    });
+
+    let central_ok = central_res
+        .map(|r| r.status().is_success() || r.status().is_redirection())
+        .unwrap_or(false);
+    checks.push(HealthCheckResult {
+        name: "Maven Central".into(),
+        status: central_ok,
+        message: if central_ok {
+            "Reachable (repo1.maven.org)".into()
+        } else {
+            "Cannot connect to repo1.maven.org".into()
+        },
+        hint: if !central_ok {
+            Some("Maven dependencies cannot be fetched without access to Maven Central".into())
+        } else {
+            None
+        },
+    });
+
+    let initializr_ok = initializr_res
+        .map(|r| r.status().is_success() || r.status().is_redirection())
+        .unwrap_or(false);
+    checks.push(HealthCheckResult {
+        name: "Spring Initializr API".into(),
+        status: initializr_ok,
+        message: if initializr_ok {
+            "Reachable (start.spring.io)".into()
+        } else {
+            "Offline / Unreachable (embedded offline templates will be used)".into()
+        },
+        hint: None,
     });
 
     // 4. Installed JDK inventory
@@ -131,7 +170,7 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
     let installed = store.list_installed().unwrap_or_default();
     let has_jdks = !installed.is_empty();
     let jdk_msg = if has_jdks {
-        format!("{} JDK(s) managed locally", installed.len())
+        format!("{} JDK(s) managed locally in djuke store", installed.len())
     } else {
         "No JDKs currently installed in djuke store".into()
     };
@@ -141,7 +180,7 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
         message: jdk_msg,
         hint: if !has_jdks {
             Some(
-                "Run 'djuke java install 21' or 'djuke java install latest' to install a JDK"
+                "Run 'djuke java install 21' or 'djuke java default 21' to install a managed JDK"
                     .into(),
             )
         } else {
@@ -149,7 +188,51 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
         },
     });
 
-    // 5. Project context check
+    // 5. Global Default JDK
+    let global_config = load_global_config(&paths.config_file()).unwrap_or_default();
+    let (g_distro, g_ver) = match &global_config.java {
+        Some(j) => (
+            j.default_distribution
+                .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
+            j.default_version
+                .clone()
+                .unwrap_or_else(|| "21".to_string()),
+        ),
+        None => (djuke_core::JdkDistribution::Temurin, "21".to_string()),
+    };
+    let global_spec = djuke_core::JdkSpec::new(g_distro, g_ver);
+    let global_installed = store.find_installed(&global_spec).is_some();
+    checks.push(HealthCheckResult {
+        name: "Global Default Java".into(),
+        status: global_installed,
+        message: if global_installed {
+            format!("{} (installed locally)", global_spec)
+        } else {
+            format!("{} (not installed locally)", global_spec)
+        },
+        hint: if !global_installed {
+            Some(format!(
+                "Run 'djuke java install {}' to install the global default JDK",
+                global_spec.version
+            ))
+        } else {
+            None
+        },
+    });
+
+    // 6. System PATH Java detection
+    let system_java = detect_system_java();
+    checks.push(HealthCheckResult {
+        name: "System PATH Java".into(),
+        status: true,
+        message: match system_java {
+            Some(info) => format!("Found: {}", info),
+            None => "None found on PATH (djuke manages isolated runtimes)".into(),
+        },
+        hint: None,
+    });
+
+    // 7. Project context check
     let resolved = resolve_project_config(working_dir, None, paths);
     let has_project = resolved.build_tool.is_some() || resolved.manifest_path.is_some();
     if has_project {
@@ -162,7 +245,11 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
             name: "Project Build Tool".into(),
             status: true,
             message: format!("Detected {} (wrapper: {})", tool_name, wrapper_found),
-            hint: None,
+            hint: if !wrapper_found {
+                Some("Run 'djuke setup' to automatically bootstrap project wrapper".into())
+            } else {
+                None
+            },
         });
 
         // Java version configured for project
@@ -171,11 +258,16 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
         checks.push(HealthCheckResult {
             name: "Project Java Version".into(),
             status: jdk_present,
-            message: if jdk_present {
-                format!("Configured {} (installed)", jdk_spec_str)
-            } else {
-                format!("Configured {} (not installed)", jdk_spec_str)
-            },
+            message: format!(
+                "{} [{}] ({})",
+                jdk_spec_str,
+                resolved.jdk_source,
+                if jdk_present {
+                    "installed"
+                } else {
+                    "not installed"
+                }
+            ),
             hint: if !jdk_present {
                 Some(format!("Run 'djuke setup' to install {}", jdk_spec_str))
             } else {
@@ -191,6 +283,16 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
         });
     }
 
+    // 8. Disk cache stats
+    if let Ok(stats) = djuke_cache::get_cache_stats(paths) {
+        checks.push(HealthCheckResult {
+            name: "Cache Storage".into(),
+            status: true,
+            message: format!("{} files ({})", stats.file_count, stats.human_size),
+            hint: None,
+        });
+    }
+
     let overall_status = checks.iter().all(|c| c.status);
 
     Ok(DoctorReport {
@@ -199,4 +301,13 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
         checks,
         overall_status,
     })
+}
+
+fn detect_system_java() -> Option<String> {
+    let output = Command::new("java").arg("-version").output().ok()?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let combined = format!("{}{}", stderr, stdout);
+    let first_line = combined.lines().next()?;
+    Some(first_line.trim().to_string())
 }

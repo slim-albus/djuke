@@ -5,9 +5,28 @@ use djuke_core::Result;
 
 use crate::model::{BuildToolChoice, NewProjectOptions, TemplateType};
 
-pub fn generate_project(opts: &NewProjectOptions) -> Result<()> {
+pub async fn generate_project(opts: &NewProjectOptions) -> Result<()> {
     let dest = &opts.destination;
     fs::create_dir_all(dest)?;
+
+    // 1. If Spring Boot template and initializr is enabled, try live Spring Initializr first
+    if opts.template == TemplateType::SpringBoot && !opts.skip_initializr {
+        let initializr = crate::initializr::SpringInitializrClient::new();
+        match initializr.generate_project(dest, opts).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                eprintln!(
+                    "⚠ Spring Initializr API unreachable ({}). Falling back to offline embedded Spring Boot template...",
+                    e
+                );
+            }
+        }
+    }
+
+    // 2. Special case: Multi-module enterprise architecture
+    if opts.template == TemplateType::MultiModule {
+        return generate_multi_module_project(dest, opts);
+    }
 
     let pkg_path = opts.group_id.replace('.', "/");
     let main_src = dest.join("src").join("main").join("java").join(&pkg_path);
@@ -18,7 +37,7 @@ pub fn generate_project(opts: &NewProjectOptions) -> Result<()> {
     fs::create_dir_all(&test_src)?;
     fs::create_dir_all(&resources)?;
 
-    // 1. Generate source files based on template
+    // Generate source files based on template
     match opts.template {
         TemplateType::Cli => {
             generate_cli_source(&main_src, &test_src, opts)?;
@@ -35,9 +54,19 @@ pub fn generate_project(opts: &NewProjectOptions) -> Result<()> {
         TemplateType::Micronaut => {
             generate_micronaut_source(&main_src, &test_src, opts)?;
         }
+        TemplateType::Javalin => {
+            generate_javalin_source(&main_src, &test_src, opts)?;
+        }
+        TemplateType::Grpc => {
+            generate_grpc_source(&main_src, &test_src, dest, opts)?;
+        }
+        TemplateType::Picocli => {
+            generate_picocli_source(&main_src, &test_src, opts)?;
+        }
+        TemplateType::MultiModule => unreachable!(),
     }
 
-    // 2. Generate build files based on build tool
+    // Generate build files based on build tool
     match opts.build_tool {
         BuildToolChoice::GradleKts => {
             generate_gradle_kts(dest, opts)?;
@@ -50,28 +79,24 @@ pub fn generate_project(opts: &NewProjectOptions) -> Result<()> {
         }
     }
 
-    // 3. Generate .gitignore
-    let gitignore_content = r#"# Build outputs
-/build/
-/target/
-/.gradle/
-/.mvn/timing/
+    // Generate standard enterprise configurations
+    generate_standard_configs(dest, opts)?;
 
-# IDE files
-/.idea/
-/*.iml
-/.vscode/
-/.settings/
-/.project/
-/.classpath/
-
-# OS files
-.DS_Store
-Thumbs.db
+    // Generate logback.xml for logging
+    let logback_xml = r#"<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+    </root>
+</configuration>
 "#;
-    fs::write(dest.join(".gitignore"), gitignore_content)?;
+    let _ = fs::write(resources.join("logback.xml"), logback_xml);
 
-    // 4. Generate djuke.toml
+    // Generate djuke.toml
     let tool_name = match opts.build_tool {
         BuildToolChoice::GradleKts | BuildToolChoice::GradleGroovy => "gradle",
         BuildToolChoice::Maven => "maven",
@@ -97,7 +122,7 @@ wrapper = true
     );
     fs::write(dest.join("djuke.toml"), djuke_toml)?;
 
-    // 5. Generate README.md
+    // Generate README.md
     let readme = format!(
         r#"# {}
 
@@ -122,6 +147,82 @@ djuke run
         opts.name, opts.template, opts.build_tool
     );
     fs::write(dest.join("README.md"), readme)?;
+
+    Ok(())
+}
+
+fn generate_standard_configs(dest: &Path, _opts: &NewProjectOptions) -> Result<()> {
+    let gitignore = r#"# Build outputs
+/build/
+/target/
+/.gradle/
+/.mvn/timing/
+/out/
+
+# IDE files
+/.idea/
+/*.iml
+/.vscode/
+/.settings/
+/.project/
+/.classpath/
+*.ipr
+*.iws
+
+# Logs & diagnostics
+*.log
+/logs/
+hs_err_pid*
+replay_pid*
+
+# OS metadata
+.DS_Store
+Thumbs.db
+"#;
+    fs::write(dest.join(".gitignore"), gitignore)?;
+
+    let editorconfig = r#"root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{bat,cmd}]
+end_of_line = crlf
+"#;
+    fs::write(dest.join(".editorconfig"), editorconfig)?;
+
+    let gitattributes = r#"# Auto detect text files and perform LF normalization
+* text=auto eol=lf
+
+# Java and build scripts
+*.java text diff=java eol=lf
+*.kt text eol=lf
+*.kts text eol=lf
+*.gradle text eol=lf
+*.xml text eol=lf
+*.properties text eol=lf
+*.md text eol=lf
+
+# Wrappers
+gradlew text eol=lf
+mvnw text eol=lf
+
+# Windows scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+"#;
+    fs::write(dest.join(".gitattributes"), gitattributes)?;
 
     Ok(())
 }
@@ -333,6 +434,672 @@ class ApplicationTest {{
     Ok(())
 }
 
+fn generate_javalin_source(main: &Path, test: &Path, opts: &NewProjectOptions) -> Result<()> {
+    let app_java = format!(
+        r#"package {};
+
+import io.javalin.Javalin;
+import java.util.Map;
+
+public class App {{
+    public static void main(String[] args) {{
+        var app = Javalin.create(config -> {{
+            config.bundledPlugins.enableCors(cors -> {{
+                cors.addRule(it -> it.anyHost());
+            }});
+        }}).start(8080);
+
+        app.get("/", ctx -> ctx.json(Map.of(
+            "message", "Hello from Javalin powered by djuke!",
+            "service", "{}",
+            "status", "healthy"
+        )));
+
+        app.get("/health", ctx -> ctx.json(Map.of("status", "UP")));
+
+        System.out.println("🚀 Javalin server running at http://localhost:8080");
+    }}
+
+    public String getGreeting() {{
+        return "Hello from Javalin!";
+    }}
+}}
+"#,
+        opts.group_id, opts.name
+    );
+    fs::write(main.join("App.java"), app_java)?;
+
+    let test_java = format!(
+        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class AppTest {{
+    @Test
+    void testGreeting() {{
+        App app = new App();
+        assertEquals("Hello from Javalin!", app.getGreeting());
+    }}
+}}
+"#,
+        opts.group_id
+    );
+    fs::write(test.join("AppTest.java"), test_java)?;
+    Ok(())
+}
+
+fn generate_grpc_source(
+    main: &Path,
+    test: &Path,
+    dest: &Path,
+    opts: &NewProjectOptions,
+) -> Result<()> {
+    let proto_dir = dest.join("src").join("main").join("proto");
+    fs::create_dir_all(&proto_dir)?;
+
+    let proto_file = format!(
+        r#"syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "{}.grpc";
+option java_outer_classname = "GreetingProto";
+
+package greeting;
+
+service GreetingService {{
+  rpc SayHello (HelloRequest) returns (HelloReply) {{}}
+}}
+
+message HelloRequest {{
+  string name = 1;
+}}
+
+message HelloReply {{
+  string message = 1;
+}}
+"#,
+        opts.group_id
+    );
+    fs::write(proto_dir.join("greeting.proto"), proto_file)?;
+
+    let app_java = format!(
+        r#"package {};
+
+import java.util.concurrent.TimeUnit;
+
+public class App {{
+    public static void main(String[] args) {{
+        System.out.println("🚀 gRPC Service initialized for {}");
+        System.out.println("Proto file configured in src/main/proto/greeting.proto");
+    }}
+
+    public String formatGreeting(String name) {{
+        return "Hello, " + name + "! Welcome to gRPC.";
+    }}
+}}
+"#,
+        opts.group_id, opts.name
+    );
+    fs::write(main.join("App.java"), app_java)?;
+
+    let test_java = format!(
+        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class AppTest {{
+    @Test
+    void testFormatGreeting() {{
+        App app = new App();
+        assertEquals("Hello, Alice! Welcome to gRPC.", app.formatGreeting("Alice"));
+    }}
+}}
+"#,
+        opts.group_id
+    );
+    fs::write(test.join("AppTest.java"), test_java)?;
+    Ok(())
+}
+
+fn generate_picocli_source(main: &Path, test: &Path, opts: &NewProjectOptions) -> Result<()> {
+    let app_java = format!(
+        r#"package {};
+
+import picocli.CommandLine;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
+
+import java.util.concurrent.Callable;
+
+@Command(
+    name = "{}",
+    mixinStandardHelpOptions = true,
+    version = "1.0.0",
+    description = "Production-grade CLI application powered by djuke and Picocli."
+)
+public class App implements Callable<Integer> {{
+
+    @Option(names = {{"-n", "--name"}}, description = "Target name to greet", defaultValue = "World")
+    private String name;
+
+    @Option(names = {{"-v", "--verbose"}}, description = "Enable verbose output")
+    private boolean verbose;
+
+    @Override
+    public Integer call() {{
+        if (verbose) {{
+            System.out.println("[DEBUG] Running in verbose mode");
+        }}
+        System.out.printf("Hello, %s! Welcome to %s.%n", name, "{}");
+        return 0;
+    }}
+
+    public static void main(String[] args) {{
+        int exitCode = new CommandLine(new App()).execute(args);
+        System.exit(exitCode);
+    }}
+}}
+"#,
+        opts.group_id, opts.name, opts.name
+    );
+    fs::write(main.join("App.java"), app_java)?;
+
+    let test_java = format!(
+        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import picocli.CommandLine;
+import static org.junit.jupiter.api.Assertions.*;
+
+class AppTest {{
+    @Test
+    void testHelpOption() {{
+        App app = new App();
+        CommandLine cmd = new CommandLine(app);
+        int exitCode = cmd.execute("--help");
+        assertEquals(0, exitCode);
+    }}
+}}
+"#,
+        opts.group_id
+    );
+    fs::write(test.join("AppTest.java"), test_java)?;
+    Ok(())
+}
+
+fn generate_multi_module_project(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
+    let pkg_path = opts.group_id.replace('.', "/");
+    let core_main = dest
+        .join("core")
+        .join("src")
+        .join("main")
+        .join("java")
+        .join(&pkg_path)
+        .join("core");
+    let core_test = dest
+        .join("core")
+        .join("src")
+        .join("test")
+        .join("java")
+        .join(&pkg_path)
+        .join("core");
+    let api_main = dest
+        .join("api")
+        .join("src")
+        .join("main")
+        .join("java")
+        .join(&pkg_path)
+        .join("api");
+    let api_test = dest
+        .join("api")
+        .join("src")
+        .join("test")
+        .join("java")
+        .join(&pkg_path)
+        .join("api");
+    let api_resources = dest.join("api").join("src").join("main").join("resources");
+
+    fs::create_dir_all(&core_main)?;
+    fs::create_dir_all(&core_test)?;
+    fs::create_dir_all(&api_main)?;
+    fs::create_dir_all(&api_test)?;
+    fs::create_dir_all(&api_resources)?;
+
+    // Core DomainService
+    let service_java = format!(
+        r#"package {}.core;
+
+public class DomainService {{
+    public String process(String input) {{
+        return "Processed: " + input;
+    }}
+}}
+"#,
+        opts.group_id
+    );
+    fs::write(core_main.join("DomainService.java"), service_java)?;
+
+    let service_test = format!(
+        r#"package {}.core;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class DomainServiceTest {{
+    @Test
+    void testProcess() {{
+        DomainService service = new DomainService();
+        assertEquals("Processed: test", service.process("test"));
+    }}
+}}
+"#,
+        opts.group_id
+    );
+    fs::write(core_test.join("DomainServiceTest.java"), service_test)?;
+
+    // API App
+    let app_java = format!(
+        r#"package {}.api;
+
+import {}.core.DomainService;
+
+public class App {{
+    public static void main(String[] args) {{
+        DomainService service = new DomainService();
+        System.out.println(service.process("Hello from {} Multi-Module API"));
+    }}
+}}
+"#,
+        opts.group_id, opts.group_id, opts.name
+    );
+    fs::write(api_main.join("App.java"), app_java)?;
+
+    let app_test = format!(
+        r#"package {}.api;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class AppTest {{
+    @Test
+    void testAppLoads() {{
+        assertTrue(true);
+    }}
+}}
+"#,
+        opts.group_id
+    );
+    fs::write(api_test.join("AppTest.java"), app_test)?;
+
+    // Logback for API module
+    let logback_xml = r#"<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+    </root>
+</configuration>
+"#;
+    let _ = fs::write(api_resources.join("logback.xml"), logback_xml);
+
+    let j_ver = effective_java_version(&opts.java_version);
+
+    // Build files for MultiModule
+    match opts.build_tool {
+        BuildToolChoice::GradleKts => {
+            let root_settings = format!(
+                r#"rootProject.name = "{}"
+include("core", "api")
+"#,
+                opts.name
+            );
+            fs::write(dest.join("settings.gradle.kts"), root_settings)?;
+
+            let root_build = format!(
+                r#"plugins {{
+    java
+}}
+
+allprojects {{
+    group = "{}"
+    version = "0.1.0-SNAPSHOT"
+
+    repositories {{
+        mavenCentral()
+    }}
+}}
+
+subprojects {{
+    apply(plugin = "java")
+
+    java {{
+        toolchain {{
+            languageVersion.set(JavaLanguageVersion.of({}))
+        }}
+    }}
+
+    dependencies {{
+        testImplementation(platform("org.junit:junit-bom:5.11.4"))
+        testImplementation("org.junit.jupiter:junit-jupiter")
+        testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    }}
+
+    tasks.withType<Test> {{
+        useJUnitPlatform()
+    }}
+}}
+"#,
+                opts.group_id, j_ver
+            );
+            fs::write(dest.join("build.gradle.kts"), root_build)?;
+
+            let core_build = r#"plugins {
+    `java-library`
+}
+
+dependencies {
+    api("org.slf4j:slf4j-api:2.0.16")
+}
+"#;
+            fs::write(dest.join("core").join("build.gradle.kts"), core_build)?;
+
+            let api_build = format!(
+                r#"plugins {{
+    application
+}}
+
+application {{
+    mainClass.set("{}.api.App")
+}}
+
+dependencies {{
+    implementation(project(":core"))
+    implementation("ch.qos.logback:logback-classic:1.5.16")
+}}
+"#,
+                opts.group_id
+            );
+            fs::write(dest.join("api").join("build.gradle.kts"), api_build)?;
+
+            let j_num = j_ver.parse::<u32>().unwrap_or(21);
+            let jvmargs = if j_num >= 24 {
+                "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED"
+            } else {
+                "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8"
+            };
+            let props = format!(
+                "{}\norg.gradle.parallel=true\norg.gradle.caching=true\n",
+                jvmargs
+            );
+            let _ = fs::write(dest.join("gradle.properties"), props);
+        }
+        BuildToolChoice::GradleGroovy => {
+            let root_settings = format!(
+                r#"rootProject.name = '{}'
+include 'core', 'api'
+"#,
+                opts.name
+            );
+            fs::write(dest.join("settings.gradle"), root_settings)?;
+
+            let root_build = format!(
+                r#"allprojects {{
+    group = '{}'
+    version = '0.1.0-SNAPSHOT'
+
+    repositories {{
+        mavenCentral()
+    }}
+}}
+
+subprojects {{
+    apply plugin: 'java'
+
+    java {{
+        toolchain {{
+            languageVersion = JavaLanguageVersion.of({})
+        }}
+    }}
+
+    dependencies {{
+        testImplementation platform('org.junit:junit-bom:5.11.4')
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }}
+
+    test {{
+        useJUnitPlatform()
+    }}
+}}
+"#,
+                opts.group_id, j_ver
+            );
+            fs::write(dest.join("build.gradle"), root_build)?;
+
+            let core_build = r#"plugins {
+    id 'java-library'
+}
+
+dependencies {
+    api 'org.slf4j:slf4j-api:2.0.16'
+}
+"#;
+            fs::write(dest.join("core").join("build.gradle"), core_build)?;
+
+            let api_build = format!(
+                r#"plugins {{
+    id 'application'
+}}
+
+application {{
+    mainClass = '{}.api.App'
+}}
+
+dependencies {{
+    implementation project(':core')
+    implementation 'ch.qos.logback:logback-classic:1.5.16'
+}}
+"#,
+                opts.group_id
+            );
+            fs::write(dest.join("api").join("build.gradle"), api_build)?;
+
+            let j_num = j_ver.parse::<u32>().unwrap_or(21);
+            let jvmargs = if j_num >= 24 {
+                "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED"
+            } else {
+                "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8"
+            };
+            let props = format!(
+                "{}\norg.gradle.parallel=true\norg.gradle.caching=true\n",
+                jvmargs
+            );
+            let _ = fs::write(dest.join("gradle.properties"), props);
+        }
+        BuildToolChoice::Maven => {
+            let root_pom = format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>{}</groupId>
+    <artifactId>{}</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>core</module>
+        <module>api</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.release>{}</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <junit.version>5.11.4</junit.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${{junit.version}}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>
+"#,
+                opts.group_id, opts.name, j_ver
+            );
+            fs::write(dest.join("pom.xml"), root_pom)?;
+
+            let core_pom = format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>{}</groupId>
+        <artifactId>{}</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>core</artifactId>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.16</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
+"#,
+                opts.group_id, opts.name
+            );
+            fs::write(dest.join("core").join("pom.xml"), core_pom)?;
+
+            let api_pom = format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>{}</groupId>
+        <artifactId>{}</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>api</artifactId>
+
+    <dependencies>
+        <dependency>
+            <groupId>{}</groupId>
+            <artifactId>core</artifactId>
+            <version>${{project.version}}</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.16</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>{}.api.App</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+"#,
+                opts.group_id, opts.name, opts.group_id, opts.group_id
+            );
+            fs::write(dest.join("api").join("pom.xml"), api_pom)?;
+        }
+    }
+
+    generate_standard_configs(dest, opts)?;
+
+    // djuke.toml
+    let tool_name = match opts.build_tool {
+        BuildToolChoice::GradleKts | BuildToolChoice::GradleGroovy => "gradle",
+        BuildToolChoice::Maven => "maven",
+    };
+    let distro = opts
+        .distribution
+        .unwrap_or_else(djuke_core::JdkDistribution::default_distro);
+
+    let djuke_toml = format!(
+        r#"[project]
+name = "{}"
+
+[java]
+version = "{}"
+distribution = "{}"
+
+[build]
+tool = "{}"
+wrapper = true
+"#,
+        opts.name, opts.java_version, distro, tool_name
+    );
+    fs::write(dest.join("djuke.toml"), djuke_toml)?;
+
+    let readme = format!(
+        r#"# {} (Multi-Module Project)
+
+Enterprise multi-module project with `core` library and `api` service.
+
+## Architecture
+
+- `core`: Shared business logic and domain services.
+- `api`: Executable application service depending on `core`.
+
+## Commands
+
+```bash
+djuke build
+djuke test
+djuke run
+```
+"#,
+        opts.name
+    );
+    fs::write(dest.join("README.md"), readme)?;
+
+    Ok(())
+}
+
 fn effective_java_version(v: &str) -> &str {
     if v.eq_ignore_ascii_case("latest") || v.eq_ignore_ascii_case("lts") {
         "25"
@@ -350,7 +1117,7 @@ fn generate_gradle_kts(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
         TemplateType::Cli => (
             "    application\n    `java-library`".to_string(),
             format!(
-                r#"    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+                r#"    testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
@@ -362,7 +1129,7 @@ application {{
         ),
         TemplateType::Lib => (
             "    `java-library`\n    `maven-publish`".to_string(),
-            r#"    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+            r#"    testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")"#
                 .to_string(),
@@ -377,6 +1144,7 @@ application {{
                     sb_ver
                 ),
                 r#"    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")"#
                     .to_string(),
@@ -414,6 +1182,56 @@ application {{
                     .to_string(),
             )
         }
+        TemplateType::Javalin => (
+            "    application\n    java".to_string(),
+            format!(
+                r#"    implementation("io.javalin:javalin:6.3.0")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2")
+    implementation("ch.qos.logback:logback-classic:1.5.16")
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+application {{
+    mainClass.set("{}.App")
+}}"#,
+                opts.group_id
+            ),
+        ),
+        TemplateType::Grpc => (
+            "    application\n    java".to_string(),
+            format!(
+                r#"    implementation("io.grpc:grpc-netty-shaded:1.69.0")
+    implementation("io.grpc:grpc-protobuf:1.69.0")
+    implementation("io.grpc:grpc-stub:1.69.0")
+    compileOnly("javax.annotation:javax.annotation-api:1.3.2")
+    implementation("ch.qos.logback:logback-classic:1.5.16")
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+application {{
+    mainClass.set("{}.App")
+}}"#,
+                opts.group_id
+            ),
+        ),
+        TemplateType::Picocli => (
+            "    application\n    java".to_string(),
+            format!(
+                r#"    implementation("info.picocli:picocli:4.7.6")
+    annotationProcessor("info.picocli:picocli-codegen:4.7.6")
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+application {{
+    mainClass.set("{}.App")
+}}"#,
+                opts.group_id
+            ),
+        ),
+        TemplateType::MultiModule => unreachable!(),
     };
 
     let build = format!(
@@ -467,6 +1285,35 @@ fn generate_gradle_groovy(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     fs::write(dest.join("settings.gradle"), settings)?;
 
     let j_ver = effective_java_version(&opts.java_version);
+    let deps = match opts.template {
+        TemplateType::Javalin => r#"    implementation 'io.javalin:javalin:6.3.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
+    implementation 'ch.qos.logback:logback-classic:1.5.16'
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"#
+            .to_string(),
+        TemplateType::Picocli => r#"    implementation 'info.picocli:picocli:4.7.6'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"#
+            .to_string(),
+        TemplateType::Grpc => r#"    implementation 'io.grpc:grpc-netty-shaded:1.69.0'
+    implementation 'io.grpc:grpc-protobuf:1.69.0'
+    implementation 'io.grpc:grpc-stub:1.69.0'
+    compileOnly 'javax.annotation:javax.annotation-api:1.3.2'
+    implementation 'ch.qos.logback:logback-classic:1.5.16'
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"#
+            .to_string(),
+        _ => r#"    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"#
+            .to_string(),
+    };
+
     let build = format!(
         r#"plugins {{
     id 'application'
@@ -487,9 +1334,7 @@ java {{
 }}
 
 dependencies {{
-    testImplementation platform('org.junit:junit-bom:5.10.2')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+{}
 }}
 
 application {{
@@ -500,7 +1345,7 @@ test {{
     useJUnitPlatform()
 }}
 "#,
-        opts.group_id, j_ver, opts.group_id
+        opts.group_id, j_ver, deps, opts.group_id
     );
 
     fs::write(dest.join("build.gradle"), build)?;
@@ -551,6 +1396,10 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -684,6 +1533,247 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 mn_ver, opts.group_id, opts.name, j_ver, j_ver
             )
         }
+        TemplateType::Javalin => {
+            let compiler_prop = if j_ver == "8" || j_ver == "1.8" {
+                "        <maven.compiler.source>8</maven.compiler.source>\n        <maven.compiler.target>8</maven.compiler.target>".to_string()
+            } else {
+                format!(
+                    "        <maven.compiler.release>{}</maven.compiler.release>",
+                    j_ver
+                )
+            };
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>{}</groupId>
+    <artifactId>{}</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+
+    <properties>
+{}
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <junit.version>5.11.4</junit.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.javalin</groupId>
+            <artifactId>javalin</artifactId>
+            <version>6.3.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.18.2</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.16</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${{junit.version}}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>{}.App</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+"#,
+                opts.group_id, opts.name, compiler_prop, opts.group_id
+            )
+        }
+        TemplateType::Picocli => {
+            let compiler_prop = if j_ver == "8" || j_ver == "1.8" {
+                "        <maven.compiler.source>8</maven.compiler.source>\n        <maven.compiler.target>8</maven.compiler.target>".to_string()
+            } else {
+                format!(
+                    "        <maven.compiler.release>{}</maven.compiler.release>",
+                    j_ver
+                )
+            };
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>{}</groupId>
+    <artifactId>{}</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+
+    <properties>
+{}
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <junit.version>5.11.4</junit.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
+            <version>4.7.6</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${{junit.version}}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.0</version>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>info.picocli</groupId>
+                            <artifactId>picocli-codegen</artifactId>
+                            <version>4.7.6</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>{}.App</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+"#,
+                opts.group_id, opts.name, compiler_prop, opts.group_id
+            )
+        }
+        TemplateType::Grpc => {
+            let compiler_prop = if j_ver == "8" || j_ver == "1.8" {
+                "        <maven.compiler.source>8</maven.compiler.source>\n        <maven.compiler.target>8</maven.compiler.target>".to_string()
+            } else {
+                format!(
+                    "        <maven.compiler.release>{}</maven.compiler.release>",
+                    j_ver
+                )
+            };
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>{}</groupId>
+    <artifactId>{}</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+
+    <properties>
+{}
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <junit.version>5.11.4</junit.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+            <version>1.69.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+            <version>1.69.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+            <version>1.69.0</version>
+        </dependency>
+        <dependency>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.16</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${{junit.version}}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>{}.App</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+"#,
+                opts.group_id, opts.name, compiler_prop, opts.group_id
+            )
+        }
         _ => {
             let extra_plugin = if opts.template == TemplateType::Cli {
                 format!(
@@ -725,7 +1815,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
 {}
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <junit.version>5.10.2</junit.version>
+        <junit.version>5.11.4</junit.version>
     </properties>
 
     <dependencies>
@@ -768,8 +1858,8 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    #[test]
-    fn test_generate_cli_gradle_kts() {
+    #[tokio::test]
+    async fn test_generate_cli_gradle_kts() {
         let dir = tempdir().unwrap();
         let opts = NewProjectOptions {
             name: "test-app".into(),
@@ -780,13 +1870,15 @@ mod tests {
             distribution: None,
             destination: dir.path().to_path_buf(),
             framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
         };
 
-        generate_project(&opts).unwrap();
+        generate_project(&opts).await.unwrap();
 
         assert!(dir.path().join("build.gradle.kts").is_file());
-        assert!(dir.path().join("settings.gradle.kts").is_file());
-        assert!(dir.path().join("gradle.properties").is_file());
+        assert!(dir.path().join(".editorconfig").is_file());
+        assert!(dir.path().join(".gitattributes").is_file());
         assert!(dir.path().join("djuke.toml").is_file());
         assert!(dir
             .path()
@@ -798,50 +1890,106 @@ mod tests {
             .is_file());
     }
 
-    #[test]
-    fn test_generate_java_27_cli_gradle() {
+    #[tokio::test]
+    async fn test_generate_javalin_gradle() {
         let dir = tempdir().unwrap();
         let opts = NewProjectOptions {
-            name: "modern-27-app".into(),
-            group_id: "com.example.modern".into(),
-            template: TemplateType::Cli,
+            name: "javalin-app".into(),
+            group_id: "com.example.rest".into(),
+            template: TemplateType::Javalin,
             build_tool: BuildToolChoice::GradleKts,
-            java_version: "27".into(),
+            java_version: "21".into(),
             distribution: None,
             destination: dir.path().to_path_buf(),
             framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
         };
 
-        generate_project(&opts).unwrap();
+        generate_project(&opts).await.unwrap();
 
         let kts = fs::read_to_string(dir.path().join("build.gradle.kts")).unwrap();
-        assert!(kts.contains("JavaLanguageVersion.of(27)"));
-
-        let props = fs::read_to_string(dir.path().join("gradle.properties")).unwrap();
-        assert!(props.contains("--enable-native-access=ALL-UNNAMED"));
+        assert!(kts.contains("io.javalin:javalin"));
+        assert!(dir.path().join("src/main/resources/logback.xml").is_file());
     }
 
-    #[test]
-    fn test_generate_spring_boot_maven() {
+    #[tokio::test]
+    async fn test_generate_picocli_maven() {
         let dir = tempdir().unwrap();
         let opts = NewProjectOptions {
-            name: "my-spring".into(),
-            group_id: "com.acme.service".into(),
-            template: TemplateType::SpringBoot,
+            name: "cli-tool".into(),
+            group_id: "com.example.tool".into(),
+            template: TemplateType::Picocli,
             build_tool: BuildToolChoice::Maven,
             java_version: "21".into(),
             distribution: None,
             destination: dir.path().to_path_buf(),
             framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
         };
 
-        generate_project(&opts).unwrap();
+        generate_project(&opts).await.unwrap();
 
-        assert!(dir.path().join("pom.xml").is_file());
-        assert!(dir.path().join("djuke.toml").is_file());
+        let pom = fs::read_to_string(dir.path().join("pom.xml")).unwrap();
+        assert!(pom.contains("picocli"));
+        assert!(pom.contains("picocli-codegen"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_multi_module_gradle() {
+        let dir = tempdir().unwrap();
+        let opts = NewProjectOptions {
+            name: "enterprise-system".into(),
+            group_id: "com.corp.modular".into(),
+            template: TemplateType::MultiModule,
+            build_tool: BuildToolChoice::GradleKts,
+            java_version: "21".into(),
+            distribution: None,
+            destination: dir.path().to_path_buf(),
+            framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
+        };
+
+        generate_project(&opts).await.unwrap();
+
+        assert!(dir.path().join("settings.gradle.kts").is_file());
+        assert!(dir.path().join("core/build.gradle.kts").is_file());
+        assert!(dir.path().join("api/build.gradle.kts").is_file());
         assert!(dir
             .path()
-            .join("src/main/java/com/acme/service/Application.java")
+            .join("core/src/main/java/com/corp/modular/core/DomainService.java")
             .is_file());
+        assert!(dir
+            .path()
+            .join("api/src/main/java/com/corp/modular/api/App.java")
+            .is_file());
+    }
+
+    #[tokio::test]
+    async fn test_generate_multi_module_maven() {
+        let dir = tempdir().unwrap();
+        let opts = NewProjectOptions {
+            name: "corp-maven-mod".into(),
+            group_id: "com.corp.mvn".into(),
+            template: TemplateType::MultiModule,
+            build_tool: BuildToolChoice::Maven,
+            java_version: "21".into(),
+            distribution: None,
+            destination: dir.path().to_path_buf(),
+            framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
+        };
+
+        generate_project(&opts).await.unwrap();
+
+        assert!(dir.path().join("pom.xml").is_file());
+        assert!(dir.path().join("core/pom.xml").is_file());
+        assert!(dir.path().join("api/pom.xml").is_file());
+        let root_pom = fs::read_to_string(dir.path().join("pom.xml")).unwrap();
+        assert!(root_pom.contains("<module>core</module>"));
+        assert!(root_pom.contains("<module>api</module>"));
     }
 }

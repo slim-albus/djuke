@@ -4,7 +4,7 @@ use std::path::Path;
 
 use djuke_core::{DjukeError, JdkDistribution, Result};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GlobalConfig {
     pub java: Option<GlobalJavaConfig>,
 }
@@ -13,17 +13,6 @@ pub struct GlobalConfig {
 pub struct GlobalJavaConfig {
     pub default_version: Option<String>,
     pub default_distribution: Option<JdkDistribution>,
-}
-
-impl Default for GlobalConfig {
-    fn default() -> Self {
-        Self {
-            java: Some(GlobalJavaConfig {
-                default_version: Some("21".to_string()),
-                default_distribution: Some(JdkDistribution::Temurin),
-            }),
-        }
-    }
 }
 
 pub fn load_global_config(path: &Path) -> Result<GlobalConfig> {
