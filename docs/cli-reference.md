@@ -99,3 +99,87 @@ eval "$(djuke env bash)"
 # PowerShell
 djuke env powershell | Invoke-Expression
 ```
+
+### 7. `djuke new`
+Scaffold a new Java project from built-in templates with pre-configured build scripts, wrapper, sample code, and `djuke.toml`.
+
+```bash
+# Interactive or default CLI application
+djuke new my-app
+
+# Spring Boot application with Maven and Java 21
+djuke new my-service --template spring-boot --build-tool maven --java 21 --package com.example.service
+
+# Quarkus application with Gradle Kotlin DSL
+djuke new my-quarkus --template quarkus --build-tool gradle-kts
+
+# Available templates: cli, lib, spring-boot, quarkus, micronaut
+# Available build tools: gradle-kts, gradle-groovy, maven
+```
+
+### 8. `djuke add`
+Add a dependency to `pom.xml` or `build.gradle(.kts)` with automated scope resolution and latest-version lookup from Maven Central if unspecified.
+
+```bash
+# Add latest postgresql driver
+djuke add org.postgresql:postgresql
+
+# Add specific version with scope
+djuke add org.projectlombok:lombok:1.18.30 --scope compile-only
+djuke add org.junit.jupiter:junit-jupiter:5.10.2 --scope test
+```
+
+### 9. `djuke remove`
+Remove a dependency from `pom.xml` or `build.gradle(.kts)`.
+
+```bash
+djuke remove org.postgresql:postgresql
+djuke remove lombok
+```
+
+### 10. `djuke search`
+Fast search across Maven Central Solr catalog with artifact coordinates, latest version, and packaging.
+
+```bash
+djuke search postgresql
+djuke search spring-boot-starter-web --limit 5
+```
+
+### 11. `djuke cache`
+Inspect, analyze, and purge cached JDK downloads and transient artifacts.
+
+```bash
+# Show cache size and file count
+djuke cache stats
+
+# List cached archive files
+djuke cache list
+
+# Clean all cached downloads
+djuke cache clean
+```
+
+### 12. `djuke completions`
+Generate shell completion scripts for your current shell.
+
+```bash
+# Bash
+djuke completions bash > ~/.local/share/bash-completion/completions/djuke
+
+# Zsh
+djuke completions zsh > "${fpath[1]}/_djuke"
+
+# Fish
+djuke completions fish > ~/.config/fish/completions/djuke.fish
+
+# PowerShell
+djuke completions powershell >> $PROFILE
+```
+
+### 13. Single-File Java Execution (`djuke run <file.java>`)
+Run single-file Java source files directly without a build file (JEP 330) using the resolved JDK:
+
+```bash
+djuke run HelloWorld.java
+djuke run Script.java -- --arg1 --arg2
+```

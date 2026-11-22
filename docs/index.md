@@ -16,5 +16,9 @@ Welcome to the internal engineering documentation for **djuke**.
    - Wrapper-first delegation for Gradle (`gradlew`, `gradlew.bat`) and Maven (`mvnw`, `mvnw.cmd`), task mapping, and wrapper bootstrapping.
 6. [Developer & Testing Guide](development.md)
    - Code conventions, workspace navigation, testing patterns, and subagent collaboration rules.
-7. [Architecture Decision Records (ADR)](adr/0001-workspace-crate-structure.md)
+7. [Project Templates & Scaffolding](templates.md)
+   - Built-in templates (`cli`, `lib`, `spring-boot`, `quarkus`, `micronaut`) across Gradle and Maven.
+8. [Package Management & Central Search](package-management.md)
+   - Dependency additions, removals, scope mapping, and Maven Central Solr API integration.
+9. [Architecture Decision Records (ADR)](adr/0001-workspace-crate-structure.md)
    - Recorded architectural decisions, trade-offs, and design rationale.
