@@ -13,6 +13,8 @@ use djuke_jdk::{disco::DiscoMajorVersion, install_jdk, resolve_jdk, DiscoClient,
 use djuke_platform::{DjukePaths, Platform};
 use djuke_process::{CommandContext, ProcessRunner};
 
+mod updater;
+
 #[derive(Parser)]
 #[command(
     name = "djuke",
@@ -269,6 +271,15 @@ enum Commands {
 
     #[command(about = "Maven build tool commands and direct execution")]
     Maven(MavenArgs),
+
+    #[command(about = "Upgrade djuke to the latest release directly from GitHub")]
+    Upgrade {
+        #[arg(long, help = "Check for updates without downloading or installing")]
+        check: bool,
+
+        #[arg(short, long, help = "Force re-download even if already up to date")]
+        force: bool,
+    },
 
     #[command(external_subcommand)]
     External(Vec<String>),
@@ -1316,7 +1327,7 @@ async fn main() -> Result<()> {
 
             println!(
                 "{}",
-                "✔ Project initialized and toolchain primed successfully!"
+                "✔ Project created and toolchain primed successfully!"
                     .green()
                     .bold()
             );
@@ -2499,6 +2510,10 @@ async fn main() -> Result<()> {
                     config.jdk_spec
                 );
             }
+        }
+
+        Commands::Upgrade { check, force } => {
+            updater::run_self_upgrade(check, force, cli.quiet).await?;
         }
 
         Commands::External(args) => {

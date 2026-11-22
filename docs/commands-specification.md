@@ -451,7 +451,26 @@ Every command implementation in `djuke` MUST strictly obey the following four in
 
 ---
 
-### 2.27 External Subcommand Passthrough
+### 2.27 `djuke upgrade`
+*Self-upgrade the djuke binary directly from GitHub releases.*
+
+- **Signature**: `djuke upgrade [--check] [-f|--force]`
+- **Situational Behavior**:
+  - **Situation A (Check only `--check`)**:
+    - Queries GitHub Releases API for `slim-albus/djuke`.
+    - Compares current semver against latest release tag.
+    - Reports whether an update is available without modifying local files.
+  - **Situation B (Upgrade available)**:
+    - Finds the prebuilt binary or archive matching current OS and architecture.
+    - Downloads archive, extracts binary, and atomically replaces the currently executing `djuke` executable.
+    - Reports: `"✔ Successfully upgraded djuke to vX.Y.Z!"`.
+  - **Situation C (Already up to date)**:
+    - Reports `"✔ djuke is already up to date!"` unless `--force` is specified.
+- **Exit Codes**: `0` on success, `1` on network or IO error.
+
+---
+
+### 2.28 External Subcommand Passthrough
 *Fallback for arbitrary tool tasks.*
 
 - **Signature**: `djuke <task-name> [args...]`

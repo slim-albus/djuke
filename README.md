@@ -1,87 +1,172 @@
 # djuke
 
-> Prototype JDK manager and build-tool orchestrator for Java ecosystems, written in Rust.
+> **The modern developer toolchain for Java.**  
+> Fast JDK manager, build orchestrator, single-file script runner, and package manager in a single native binary.
 
-`djuke` is an experimental prototype providing a streamlined, npm-like developer experience for Java projects. Clone any Java repository, run `djuke setup` or `djuke build`, and get the exact right JDK and build environment immediately—without manual SDK installers, path juggling, or administrator privileges.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-windows%20%7C%20macos%20%7C%20linux-lightgrey)](https://github.com/slim-albus/djuke)
 
 ---
 
-## Features
+## Why djuke?
 
-- **Zero-Config Detection**: Automatically inspects `pom.xml`, `build.gradle`, `build.gradle.kts`, `.java-version`, and `.sdkmanrc`.
-- **Multi-Vendor JDK Management**: Automatic resolution and installation of Temurin, Corretto, Zulu, Microsoft, Semeru, GraalVM, Liberica, Oracle, and SapMachine via Foojay Disco API v3, with dynamic `latest` and `lts` alias support.
-- **Build Tool Selection**: Seamlessly choose between Gradle and Maven via `--tool`, `djuke.toml`, or project auto-detection.
-- **Arbitrary Task Passthrough**: Any task or goal (e.g. `djuke bootJar`, `djuke compileJava`, `djuke spotlessApply`, `djuke dependency:tree`) is forwarded directly to the build tool with `JAVA_HOME` injected.
-- **Dedicated Tool Execution**: Direct access to `djuke gradle` (daemon stop/status, wrapper generation, custom tasks) and `djuke maven` (wrapper generation, phases/goals).
-- **Process Isolation**: Ephemerally injects `JAVA_HOME` and prepends `$JAVA_HOME/bin` to `PATH` for child processes without modifying global system environment variables.
-- **Dependency Insights**: Interactive dependency tree (`djuke tree`), version upgrade checks (`djuke outdated`), and vulnerability security auditing via OSV.dev (`djuke audit`).
-- **Project Bootstrapping**: Scaffolding for `cli`, `lib`, `spring-boot`, `quarkus`, and `micronaut` templates via `djuke new` and in-place `djuke init`.
-- **Diagnostics**: Built-in `djuke doctor` to inspect machine status, JDK store health, wrapper permissions, and network connectivity.
+`djuke` gives Java the streamlined developer experience of `bun`, `uv`, and `npm`:
+
+- **Zero-Config Detection**: Automatically detects JDK versions and build tools from `pom.xml`, `build.gradle.kts`, `build.gradle`, `.java-version`, or `.sdkmanrc`.
+- **Zero-Download Wrappers**: Generates Gradle and Maven wrappers with embedded offline assets in `< 5ms` with smart version compatibility (e.g. Gradle 9.9.2 for Java 24–27+).
+- **10 OpenJDK Distributions**: Install and switch seamlessly between `openjdk` (default), `temurin`, `corretto`, `zulu`, `microsoft`, `semeru`, `graalvm`, `liberica`, `oracle`, and `sapmachine` via the Foojay Disco API.
+- **Single-File Script Runner**: Run standalone `.java` scripts directly (`djuke run Script.java`) with inline dependencies (`//DEPS com.google.code.gson:gson:2.11.0` or `//DEPS gson`), auto-downloading and caching JARs.
+- **Package Management**: Add and remove dependencies (`djuke add`, `djuke remove`) across Kotlin DSL, Groovy, and Maven XML with version resolution from Maven Central.
+- **Security & Insights**: Inspect dependency trees (`djuke tree`), check for outdated libraries (`djuke outdated`), and scan vulnerabilities (`djuke audit`) via OSV.dev.
+- **Live Development**: Launch hot-reloading dev modes (`djuke dev`) for Spring Boot, Quarkus, Micronaut, and Javalin.
+- **Self-Updating**: Keep djuke up to date with a single command (`djuke upgrade`).
 
 ---
 
 ## Quick Start
 
+### 1. Create a New Project
+
 ```bash
-# Check system health and environment
-djuke doctor
+# Interactive project generator with curated dependencies & test libraries
+djuke new my-app
 
-# Install the latest GA or LTS JDK for any distribution
-djuke java install latest
-djuke java install lts --distro zulu
+# Or create non-interactively
+djuke new my-service --template spring-boot --build-tool gradle --java 21
+```
 
-# Initialize a new project in the current directory
-djuke init --template spring-boot --build-tool maven --distro temurin
+### 2. Work in Any Java Repo
 
-# Prepare current project (installs configured JDK and validates wrappers)
+Clone any Java repository and run:
+
+```bash
+# Automatically install required JDK and prime build wrappers
 djuke setup
 
-# Start development / live-reload mode
+# Start live reload development mode
 djuke dev
 
-# Run project build or test suite (supports --tool, --offline, -U, -P, -D, --parallel)
-djuke build --offline
-djuke test -DskipTests=false
+# Run application or test suite
+djuke run
+djuke test
 
-# Run arbitrary tasks or plugin goals directly
+# Execute any Gradle task or Maven goal directly
+djuke build
 djuke bootJar
 djuke spotlessApply
-djuke dependency:tree
+```
 
-# Manage Gradle daemons directly
-djuke gradle status
-djuke gradle stop
+### 3. Run Single-File Java Scripts (with Inline Dependencies)
 
-# Inspect project dependencies and security advisories
+Create `hello.java`:
+
+```java
+//DEPS com.google.code.gson:gson:2.11.0
+//JAVA 21
+
+import com.google.gson.Gson;
+import java.util.Map;
+
+public class hello {
+    public static void main(String[] args) {
+        System.out.println(new Gson().toJson(Map.of("message", "Hello from djuke!")));
+    }
+}
+```
+
+Run it immediately:
+
+```bash
+djuke run hello.java
+# Or simply:
+djuke hello.java
+```
+
+`djuke` automatically resolves and caches all dependencies from Maven Central, sets the classpath, and launches the script.
+
+### 4. Manage Java Runtimes
+
+```bash
+# Switch active JDK for the project (or use --global for system-wide default)
+djuke use 21
+djuke use temurin@17
+djuke use latest --global
+
+# List installed runtimes or install new ones
+djuke java list
+djuke java install 21 --distro openjdk
+djuke java install latest --distro graalvm
+```
+
+### 5. Manage Dependencies
+
+```bash
+# Add dependencies (supports coordinates or popular aliases like lombok, guava, postgres)
+djuke add lombok
+djuke add org.postgresql:postgresql:42.7.4
+
+# Remove dependencies
+djuke remove lombok
+
+# Inspect dependencies, check for updates, and audit security
 djuke tree
 djuke outdated
 djuke audit
-
-# Run a single Java source file directly (JEP 330)
-djuke run HelloWorld.java
-
-# Run any arbitrary command inside the project Java environment
-djuke exec java -version
 ```
+
+### 6. Upgrade djuke
+
+```bash
+# Upgrade djuke directly to the latest GitHub release
+djuke upgrade
+
+# Or check for updates without installing
+djuke upgrade --check
+```
+
+---
+
+## CLI Overview
+
+| Command | Description |
+|---|---|
+| `djuke new [name]` | Create a new Java project from industry templates (Spring Boot, Quarkus, Micronaut, Javalin, CLI, Lib, etc.) |
+| `djuke init` | Initialize a Java project template in the current directory |
+| `djuke setup` | Install project-required JDK and prime build tool wrappers |
+| `djuke run [target]` | Run project application or execute single-file script (`Script.java`) |
+| `djuke dev` | Start application in development/live-reload mode |
+| `djuke build` | Execute project build task (`gradle build` / `mvn package`) |
+| `djuke test` | Execute test suite |
+| `djuke use [spec]` | Set active Java runtime for project or globally (`--global`) |
+| `djuke java <subcommand>` | Install, list, uninstall, and search JDK distributions |
+| `djuke add <dep>` | Add dependency to `pom.xml`, `build.gradle.kts`, or `build.gradle` |
+| `djuke remove <dep>` | Remove dependency from project build files |
+| `djuke tree` | Render colorized tree of project dependencies |
+| `djuke outdated` | Check dependencies for available updates on Maven Central |
+| `djuke audit` | Scan dependencies for known security vulnerabilities via OSV.dev |
+| `djuke search <query>` | Search Maven Central for packages and libraries |
+| `djuke doctor` | Run diagnostic health check on machine and toolchain |
+| `djuke upgrade` | Upgrade djuke binary to the latest release |
+| `djuke exec <cmd...>` | Execute any command with project `JAVA_HOME` and `PATH` injected |
+| `djuke env` | Output shell export statements for `JAVA_HOME` and `PATH` |
 
 ---
 
 ## Documentation
 
-Comprehensive design specifications and guides are available in [`docs/`](docs/index.md):
+Comprehensive guides and architectural specifications are available in the [`docs/`](docs/index.md) folder:
 
 - [Architecture & Design Blueprint](docs/architecture.md)
-- [CLI Command & Flag Reference](docs/cli-reference.md)
-- [Configuration & Zero-Config Detection](docs/configuration.md)
-- [JDK Catalog & Package Management](docs/jdk-management.md)
+- [CLI Reference](docs/cli-reference.md)
+- [Commands Specification](docs/commands-specification.md)
+- [Configuration & Project Markers](docs/configuration.md)
+- [JDK Management & Disco API](docs/jdk-management.md)
 - [Build Tool Orchestration](docs/build-orchestration.md)
 - [Project Templates](docs/templates.md)
-- [Package Management & Insights](docs/package-management.md)
-- [Developer & Contributing Guide](docs/development.md)
-- [Architecture Decision Records (ADRs)](docs/adr/0001-workspace-crate-structure.md)
+- [Package Management & Script Runner](docs/package-management.md)
 
 ---
 
 ## License
 
-Dual-licensed under MIT OR Apache-2.0.
+This project is licensed under the [MIT License](LICENSE).

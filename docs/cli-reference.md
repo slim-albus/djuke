@@ -80,6 +80,20 @@ djuke test -- --tests "*UserServiceTest"
 djuke run -- --port=8080
 ```
 
+#### Single-File Script Execution (JEP 330 & Inline Dependencies)
+`djuke run` also executes standalone `.java` files directly, parsing inline comment directives (`//DEPS`, `//JAVA`, `//JAVA_OPTIONS`, `//FILES`) and automatically caching dependencies from Maven Central:
+
+```bash
+# Run a script with inline dependencies
+djuke run Script.java
+
+# Pass arguments directly to main(String[] args)
+djuke run Script.java arg1 arg2
+
+# Shorthand direct invocation
+djuke Script.java
+```
+
 ### 5. `djuke exec`
 Execute any arbitrary command with `JAVA_HOME` and `PATH` prepended to point to the resolved JDK:
 
@@ -226,4 +240,18 @@ Perform a security audit of all declared project dependencies against the offici
 
 ```bash
 djuke audit
+```
+
+### 19. `djuke upgrade`
+Automatically check for and install updates to the `djuke` executable directly from official GitHub releases.
+
+```bash
+# Check and upgrade to latest release
+djuke upgrade
+
+# Check for updates without downloading
+djuke upgrade --check
+
+# Force re-download even if already up to date
+djuke upgrade --force
 ```
