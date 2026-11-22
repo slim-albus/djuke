@@ -77,6 +77,38 @@ enum Commands {
         java: String,
     },
 
+    #[command(about = "Initialize a new Java project in the current directory")]
+    Init {
+        #[arg(
+            short,
+            long,
+            help = "Project name (defaults to current directory name)"
+        )]
+        name: Option<String>,
+
+        #[arg(
+            short,
+            long,
+            default_value = "cli",
+            help = "Template type: cli, lib, spring-boot, quarkus, micronaut"
+        )]
+        template: String,
+
+        #[arg(
+            short,
+            long,
+            default_value = "gradle-kts",
+            help = "Build tool: gradle-kts, gradle-groovy, maven"
+        )]
+        build_tool: String,
+
+        #[arg(long, default_value = "com.example", help = "Root package / group ID")]
+        group: String,
+
+        #[arg(long, default_value = "21", help = "Target Java version")]
+        java: String,
+    },
+
     #[command(about = "Add a dependency to the current project (Maven or Gradle)")]
     Add {
         #[arg(
@@ -134,6 +166,21 @@ enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+
+    #[command(about = "Start the project application in development/live-reload mode")]
+    Dev {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    #[command(about = "Display a visual tree of project dependencies")]
+    Tree,
+
+    #[command(about = "Check for outdated dependencies against Maven Central")]
+    Outdated,
+
+    #[command(about = "Audit dependencies for known security vulnerabilities via OSV.dev")]
+    Audit,
 
     #[command(about = "Execute the project clean task")]
     Clean {
@@ -332,6 +379,51 @@ async fn main() -> Result<()> {
             println!("{}", "✔ Project initialized successfully!".green().bold());
             println!("\nNext steps:");
             println!("  cd {}", name.bold());
+            println!("  djuke setup");
+            println!("  djuke run\n");
+        }
+
+        Commands::Init {
+            name,
+            template,
+            build_tool,
+            group,
+            java,
+        } => {
+            let project_name = name.unwrap_or_else(|| {
+                current_dir
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("app")
+                    .to_string()
+            });
+
+            let t_type: djuke_templates::TemplateType = template.parse()?;
+            let b_tool: djuke_templates::BuildToolChoice = build_tool.parse()?;
+
+            println!(
+                "{}",
+                format!(
+                    "Initializing Java {} project '{}' in current directory...",
+                    t_type, project_name
+                )
+                .bold()
+                .cyan()
+            );
+
+            let opts = djuke_templates::NewProjectOptions {
+                name: project_name.clone(),
+                group_id: group,
+                template: t_type,
+                build_tool: b_tool,
+                java_version: java,
+                destination: current_dir.clone(),
+            };
+
+            djuke_templates::generate_project(&opts)?;
+
+            println!("{}", "✔ Project initialized successfully!".green().bold());
+            println!("\nNext steps:");
             println!("  djuke setup");
             println!("  djuke run\n");
         }
@@ -788,6 +880,71 @@ async fn main() -> Result<()> {
             }
 
             run_task("run", args, &current_dir, &paths, cli.quiet).await?;
+        }
+
+        Commands::Dev { args } => {
+            run_task("dev", args, &current_dir, &paths, cli.quiet).await?;
+        }
+
+        Commands::Tree => {
+            let config = resolve_project_config(&current_dir, None, &paths);
+            let deps = djuke_pm::extract_project_dependencies(&config.project_root)?;
+            let proj_name = config
+                .project_root
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("project");
+            let rendered = djuke_pm::render_dependency_tree(proj_name, &deps);
+            println!("{}", rendered);
+        }
+
+        Commands::Outdated => {
+            let config = resolve_project_config(&current_dir, None, &paths);
+            let deps = djuke_pm::extract_project_dependencies(&config.project_root)?;
+            if deps.is_empty() {
+                println!("No dependencies found in project.");
+                return Ok(());
+            }
+
+            println!(
+                "{}",
+                format!(
+                    "Checking {} dependencies against Maven Central...",
+                    deps.len()
+                )
+                .bold()
+                .cyan()
+            );
+            let central = djuke_pm::MavenCentralClient::new();
+            let results = djuke_pm::check_outdated_dependencies(&central, &deps).await?;
+            let table = djuke_pm::render_outdated_table(&results);
+            println!("\n{}", table);
+        }
+
+        Commands::Audit => {
+            let config = resolve_project_config(&current_dir, None, &paths);
+            let deps = djuke_pm::extract_project_dependencies(&config.project_root)?;
+            if deps.is_empty() {
+                println!("No dependencies found in project to audit.");
+                return Ok(());
+            }
+
+            println!(
+                "{}",
+                format!(
+                    "Auditing {} dependencies against OSV.dev vulnerability database...",
+                    deps.len()
+                )
+                .bold()
+                .cyan()
+            );
+            let audit_client = djuke_pm::AuditClient::new();
+            let reports = audit_client.audit_dependencies(&deps).await?;
+            let report_str = djuke_pm::render_audit_report(&reports, deps.len());
+            println!("{}", report_str);
+            if !reports.is_empty() {
+                std::process::exit(1);
+            }
         }
 
         Commands::Clean { args } => {
