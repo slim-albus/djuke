@@ -7,9 +7,9 @@ use djuke_core::{DjukeError, Result};
 
 pub fn verify_checksum(path: &Path, expected_sha256: &str) -> Result<()> {
     let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
+    let mut reader = BufReader::with_capacity(1024 * 1024, file);
     let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
+    let mut buffer = vec![0u8; 1024 * 1024];
 
     loop {
         let bytes_read = reader.read(&mut buffer)?;

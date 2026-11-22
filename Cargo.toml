@@ -43,6 +43,7 @@ djuke-cache = { path = "crates/djuke-cache" }
 tokio = { version = "1.40", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 futures-util = "0.3"
+bytes = "1"
 
 # Serialization & Config
 serde = { version = "1.0", features = ["derive"] }

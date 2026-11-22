@@ -44,12 +44,23 @@ pub async fn install_jdk(spec: &JdkSpec, paths: &DjukePaths, quiet: bool) -> Res
         .unwrap_or_else(|| "jdk_archive".to_string());
     let temp_archive_path = paths.cache_dir().join(&filename);
 
+    let checksum = if package
+        .checksum_type
+        .as_deref()
+        .map(|s| s.eq_ignore_ascii_case("sha256"))
+        .unwrap_or(true)
+    {
+        package.checksum.as_deref()
+    } else {
+        None
+    };
+
     let downloader = Downloader::new(quiet);
     downloader
         .download_file(
             &download_url,
             &temp_archive_path,
-            package.checksum.as_deref(),
+            checksum,
             &format!("JDK {} ({})", spec.version, spec.distribution),
         )
         .await?;
