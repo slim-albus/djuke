@@ -334,10 +334,8 @@ class ApplicationTest {{
 }
 
 fn effective_java_version(v: &str) -> &str {
-    if v.eq_ignore_ascii_case("latest") {
-        "23"
-    } else if v.eq_ignore_ascii_case("lts") {
-        "21"
+    if v.eq_ignore_ascii_case("latest") || v.eq_ignore_ascii_case("lts") {
+        "25"
     } else {
         v
     }
@@ -350,7 +348,7 @@ fn generate_gradle_kts(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let j_ver = effective_java_version(&opts.java_version);
     let (plugins, deps) = match opts.template {
         TemplateType::Cli => (
-            "    application\n    `java-library`",
+            "    application\n    `java-library`".to_string(),
             format!(
                 r#"    testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
@@ -363,39 +361,59 @@ application {{
             ),
         ),
         TemplateType::Lib => (
-            "    `java-library`\n    `maven-publish`",
+            "    `java-library`\n    `maven-publish`".to_string(),
             r#"    testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")"#
                 .to_string(),
         ),
-        TemplateType::SpringBoot => (
-            r#"    java
-    id("org.springframework.boot") version "3.4.0"
+        TemplateType::SpringBoot => {
+            let sb_ver = opts.framework_version.as_deref().unwrap_or("3.4.0");
+            (
+                format!(
+                    r#"    java
+    id("org.springframework.boot") version "{}"
     id("io.spring.dependency-management") version "1.1.6""#,
-            r#"    implementation("org.springframework.boot:spring-boot-starter-web")
+                    sb_ver
+                ),
+                r#"    implementation("org.springframework.boot:spring-boot-starter-web")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")"#
-                .to_string(),
-        ),
-        TemplateType::Quarkus => (
-            r#"    java
-    id("io.quarkus") version "3.15.1""#,
-            r#"    implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:3.15.1"))
+                    .to_string(),
+            )
+        }
+        TemplateType::Quarkus => {
+            let q_ver = opts.framework_version.as_deref().unwrap_or("3.15.1");
+            (
+                format!(
+                    r#"    java
+    id("io.quarkus") version "{}"#,
+                    q_ver
+                ),
+                format!(
+                    r#"    implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:{}"))
     implementation("io.quarkus:quarkus-resteasy-reactive")
     testImplementation("io.quarkus:quarkus-junit5")
-    testImplementation("io.rest-assured:rest-assured")"#
-                .to_string(),
-        ),
-        TemplateType::Micronaut => (
-            r#"    java
-    id("io.micronaut.application") version "4.4.2""#,
-            r#"    annotationProcessor("io.micronaut:micronaut-inject-java")
+    testImplementation("io.rest-assured:rest-assured")"#,
+                    q_ver
+                ),
+            )
+        }
+        TemplateType::Micronaut => {
+            let mn_ver = opts.framework_version.as_deref().unwrap_or("4.4.2");
+            (
+                format!(
+                    r#"    java
+    id("io.micronaut.application") version "{}"#,
+                    mn_ver
+                ),
+                r#"    annotationProcessor("io.micronaut:micronaut-inject-java")
     implementation("io.micronaut:micronaut-http-server-netty")
     runtimeOnly("ch.qos.logback:logback-classic")
     testImplementation("io.micronaut.test:micronaut-test-junit5")"#
-                .to_string(),
-        ),
+                    .to_string(),
+            )
+        }
     };
 
     let build = format!(
@@ -506,6 +524,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let j_ver = effective_java_version(&opts.java_version);
     let pom = match opts.template {
         TemplateType::SpringBoot => {
+            let sb_ver = opts.framework_version.as_deref().unwrap_or("3.4.0");
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -516,7 +535,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.4.0</version>
+        <version>{}</version>
         <relativePath/>
     </parent>
 
@@ -550,10 +569,11 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, j_ver
+                sb_ver, opts.group_id, opts.name, j_ver
             )
         }
         TemplateType::Quarkus => {
+            let q_ver = opts.framework_version.as_deref().unwrap_or("3.15.1");
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -568,7 +588,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     <properties>
         <maven.compiler.release>{}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <quarkus.platform.version>3.15.1</quarkus.platform.version>
+        <quarkus.platform.version>{}</quarkus.platform.version>
     </properties>
 
     <dependencyManagement>
@@ -612,10 +632,11 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, j_ver
+                opts.group_id, opts.name, j_ver, q_ver
             )
         }
         TemplateType::Micronaut => {
+            let mn_ver = opts.framework_version.as_deref().unwrap_or("4.4.2");
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -626,7 +647,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     <parent>
         <groupId>io.micronaut.platform</groupId>
         <artifactId>micronaut-parent</artifactId>
-        <version>4.4.2</version>
+        <version>{}</version>
     </parent>
 
     <groupId>{}</groupId>
@@ -660,7 +681,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, j_ver, j_ver
+                mn_ver, opts.group_id, opts.name, j_ver, j_ver
             )
         }
         _ => {
@@ -758,6 +779,7 @@ mod tests {
             java_version: "21".into(),
             distribution: None,
             destination: dir.path().to_path_buf(),
+            framework_version: None,
         };
 
         generate_project(&opts).unwrap();
@@ -787,6 +809,7 @@ mod tests {
             java_version: "27".into(),
             distribution: None,
             destination: dir.path().to_path_buf(),
+            framework_version: None,
         };
 
         generate_project(&opts).unwrap();
@@ -809,6 +832,7 @@ mod tests {
             java_version: "21".into(),
             distribution: None,
             destination: dir.path().to_path_buf(),
+            framework_version: None,
         };
 
         generate_project(&opts).unwrap();

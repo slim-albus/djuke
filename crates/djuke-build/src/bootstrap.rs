@@ -12,11 +12,8 @@ pub const DEFAULT_MAVEN_VERSION: &str = "3.9.16";
 /// Extracts the integer major version from a version specification string (e.g. "21", "27.0.1.1", "17.0.10", "latest", "lts").
 pub fn extract_java_major(version: &str) -> Option<u32> {
     let trimmed = version.trim();
-    if trimmed.eq_ignore_ascii_case("latest") {
-        return Some(23);
-    }
-    if trimmed.eq_ignore_ascii_case("lts") {
-        return Some(21);
+    if trimmed.eq_ignore_ascii_case("latest") || trimmed.eq_ignore_ascii_case("lts") {
+        return Some(25);
     }
     let s = if let Some(stripped) = trimmed.strip_prefix("1.") {
         stripped
@@ -146,8 +143,8 @@ pub async fn bootstrap_wrapper(
     tool: BuildTool,
     version: Option<&str>,
     project_root: &Path,
-    _java_home: &Path,
-    _paths: &DjukePaths,
+    java_home: &Path,
+    paths: &DjukePaths,
     quiet: bool,
 ) -> Result<()> {
     if !quiet {
@@ -161,6 +158,61 @@ pub async fn bootstrap_wrapper(
 
     if !quiet {
         eprintln!("✔ {} wrapper created successfully.", tool);
+    }
+
+    // Automatically prime and pre-download the wrapper distribution so future commands run instantly
+    if java_home.is_dir() {
+        let _ = prime_wrapper(tool, project_root, java_home, paths, quiet).await;
+    }
+
+    Ok(())
+}
+
+/// Pre-downloads and verifies the build tool wrapper distribution so that runtime commands run instantly.
+pub async fn prime_wrapper(
+    tool: BuildTool,
+    project_root: &Path,
+    java_home: &Path,
+    paths: &DjukePaths,
+    quiet: bool,
+) -> Result<()> {
+    let resolved =
+        crate::wrapper::find_build_executable_with_paths(project_root, tool, Some(paths))
+            .ok_or_else(|| {
+                DjukeError::NoBuildToolFound(format!(
+                    "Cannot prime wrapper: no {} wrapper executable found in '{}'",
+                    tool,
+                    project_root.display()
+                ))
+            })?;
+
+    if !quiet {
+        eprintln!("Priming and caching {} wrapper distribution...", tool);
+    }
+
+    let program_str = resolved.executable.to_string_lossy();
+    let args: Vec<&str> = match tool {
+        BuildTool::Gradle => vec!["--version"],
+        BuildTool::Maven => vec!["-v"],
+    };
+
+    let ctx = djuke_process::CommandContext {
+        java_home: java_home.to_path_buf(),
+        working_dir: project_root.to_path_buf(),
+        extra_env: std::collections::HashMap::new(),
+    };
+
+    let status = djuke_process::ProcessRunner::run_command(&program_str, &args, &ctx).await?;
+    if !status.success() {
+        return Err(DjukeError::Generic(format!(
+            "Failed to prime {} wrapper: exit code {}",
+            tool,
+            status.code().unwrap_or(1)
+        )));
+    }
+
+    if !quiet {
+        eprintln!("✔ {} wrapper distribution primed and ready.", tool);
     }
 
     Ok(())
@@ -192,7 +244,7 @@ pub async fn ensure_build_tool_installed(
         BuildTool::Maven => {
             let v = version.unwrap_or(DEFAULT_MAVEN_VERSION);
             let url = format!(
-                "https://archive.apache.org/dist/maven/maven-3/{}/binaries/apache-maven-{}-bin.zip",
+                "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/{}/apache-maven-{}-bin.zip",
                 v, v
             );
             let bin = if cfg!(windows) {

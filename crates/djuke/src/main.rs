@@ -408,7 +408,10 @@ struct GradleArgs {
 enum GradleSubcommands {
     #[command(about = "Generate the Gradle wrapper (gradlew, gradlew.bat)")]
     Wrapper {
-        #[arg(long, help = "Gradle version to generate (default: 8.10.2)")]
+        #[arg(
+            long,
+            help = "Gradle version to generate (default: latest online release)"
+        )]
         version: Option<String>,
     },
 
@@ -432,7 +435,10 @@ struct MavenArgs {
 enum MavenSubcommands {
     #[command(about = "Generate the Maven wrapper (mvnw, mvnw.cmd)")]
     Wrapper {
-        #[arg(long, help = "Maven version to generate (default: 3.9.9)")]
+        #[arg(
+            long,
+            help = "Maven version to generate (default: latest online release)"
+        )]
         version: Option<String>,
     },
 }
@@ -804,34 +810,107 @@ async fn main() -> Result<()> {
                     .cyan()
             );
 
+            let resolved_java = if java_ver.eq_ignore_ascii_case("latest")
+                || java_ver.eq_ignore_ascii_case("lts")
+            {
+                let disco = djuke_jdk::DiscoClient::new();
+                disco.resolve_version_alias(&java_ver).await
+            } else {
+                java_ver
+            };
+
+            let framework_version = match t_type {
+                djuke_templates::TemplateType::SpringBoot => {
+                    let central = djuke_pm::MavenCentralClient::new();
+                    central
+                        .resolve_latest_version(
+                            "org.springframework.boot",
+                            "spring-boot-starter-parent",
+                        )
+                        .await
+                        .ok()
+                }
+                djuke_templates::TemplateType::Quarkus => {
+                    let central = djuke_pm::MavenCentralClient::new();
+                    central
+                        .resolve_latest_version("io.quarkus.platform", "quarkus-bom")
+                        .await
+                        .ok()
+                }
+                djuke_templates::TemplateType::Micronaut => {
+                    let central = djuke_pm::MavenCentralClient::new();
+                    central
+                        .resolve_latest_version("io.micronaut.platform", "micronaut-parent")
+                        .await
+                        .ok()
+                }
+                _ => None,
+            };
+
             let opts = djuke_templates::NewProjectOptions {
                 name: proj_name.clone(),
                 group_id,
                 template: t_type,
                 build_tool: b_tool,
-                java_version: java_ver,
+                java_version: resolved_java,
                 distribution: distro_choice,
                 destination: dest.clone(),
+                framework_version,
             };
 
             let java_str = opts.java_version.clone();
             djuke_templates::generate_project(&opts)?;
 
-            match b_tool {
+            let tool_enum = match b_tool {
                 djuke_templates::BuildToolChoice::GradleKts
-                | djuke_templates::BuildToolChoice::GradleGroovy => {
-                    let g_ver = djuke_build::compatible_gradle_version_for_java(&java_str);
-                    let _ = djuke_build::create_gradle_wrapper(&dest, Some(g_ver));
+                | djuke_templates::BuildToolChoice::GradleGroovy => djuke_core::BuildTool::Gradle,
+                djuke_templates::BuildToolChoice::Maven => djuke_core::BuildTool::Maven,
+            };
+
+            // 1. Resolve actual latest wrapper version dynamically
+            let resolved_v = match tool_enum {
+                djuke_core::BuildTool::Gradle => {
+                    djuke_build::resolve_dynamic_gradle_version(&java_str, Some(&paths), true).await
                 }
-                djuke_templates::BuildToolChoice::Maven => {
-                    let _ = djuke_build::create_maven_wrapper(&dest, None);
+                djuke_core::BuildTool::Maven => {
+                    djuke_build::resolve_dynamic_maven_version(Some(&paths), true).await
+                }
+            };
+
+            match tool_enum {
+                djuke_core::BuildTool::Gradle => {
+                    let _ = djuke_build::create_gradle_wrapper(&dest, Some(&resolved_v));
+                }
+                djuke_core::BuildTool::Maven => {
+                    let _ = djuke_build::create_maven_wrapper(&dest, Some(&resolved_v));
                 }
             }
 
-            println!("{}", "✔ Project initialized successfully!".green().bold());
+            // 2. Resolve JDK and immediately prime/cache the wrapper distribution
+            let jdk_spec = djuke_core::JdkSpec {
+                distribution: distro_choice
+                    .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
+                version: java_str,
+            };
+            if let Ok(installed_jdk) = resolve_jdk(&jdk_spec, &paths, true, cli.quiet).await {
+                let _ = djuke_build::prime_wrapper(
+                    tool_enum,
+                    &dest,
+                    &installed_jdk.java_home,
+                    &paths,
+                    cli.quiet,
+                )
+                .await;
+            }
+
+            println!(
+                "{}",
+                "✔ Project initialized and toolchain primed successfully!"
+                    .green()
+                    .bold()
+            );
             println!("\nNext steps:");
             println!("  cd {}", proj_name.bold());
-            println!("  djuke setup");
             println!("  djuke run\n");
         }
 
@@ -867,33 +946,106 @@ async fn main() -> Result<()> {
                 .cyan()
             );
 
+            let resolved_java = if java_ver.eq_ignore_ascii_case("latest")
+                || java_ver.eq_ignore_ascii_case("lts")
+            {
+                let disco = djuke_jdk::DiscoClient::new();
+                disco.resolve_version_alias(&java_ver).await
+            } else {
+                java_ver
+            };
+
+            let framework_version = match t_type {
+                djuke_templates::TemplateType::SpringBoot => {
+                    let central = djuke_pm::MavenCentralClient::new();
+                    central
+                        .resolve_latest_version(
+                            "org.springframework.boot",
+                            "spring-boot-starter-parent",
+                        )
+                        .await
+                        .ok()
+                }
+                djuke_templates::TemplateType::Quarkus => {
+                    let central = djuke_pm::MavenCentralClient::new();
+                    central
+                        .resolve_latest_version("io.quarkus.platform", "quarkus-bom")
+                        .await
+                        .ok()
+                }
+                djuke_templates::TemplateType::Micronaut => {
+                    let central = djuke_pm::MavenCentralClient::new();
+                    central
+                        .resolve_latest_version("io.micronaut.platform", "micronaut-parent")
+                        .await
+                        .ok()
+                }
+                _ => None,
+            };
+
             let opts = djuke_templates::NewProjectOptions {
                 name: proj_name.clone(),
                 group_id,
                 template: t_type,
                 build_tool: b_tool,
-                java_version: java_ver,
+                java_version: resolved_java,
                 distribution: distro_choice,
                 destination: current_dir.clone(),
+                framework_version,
             };
 
             let java_str = opts.java_version.clone();
             djuke_templates::generate_project(&opts)?;
 
-            match b_tool {
+            let tool_enum = match b_tool {
                 djuke_templates::BuildToolChoice::GradleKts
-                | djuke_templates::BuildToolChoice::GradleGroovy => {
-                    let g_ver = djuke_build::compatible_gradle_version_for_java(&java_str);
-                    let _ = djuke_build::create_gradle_wrapper(&current_dir, Some(g_ver));
+                | djuke_templates::BuildToolChoice::GradleGroovy => djuke_core::BuildTool::Gradle,
+                djuke_templates::BuildToolChoice::Maven => djuke_core::BuildTool::Maven,
+            };
+
+            // 1. Resolve actual latest wrapper version dynamically
+            let resolved_v = match tool_enum {
+                djuke_core::BuildTool::Gradle => {
+                    djuke_build::resolve_dynamic_gradle_version(&java_str, Some(&paths), true).await
                 }
-                djuke_templates::BuildToolChoice::Maven => {
-                    let _ = djuke_build::create_maven_wrapper(&current_dir, None);
+                djuke_core::BuildTool::Maven => {
+                    djuke_build::resolve_dynamic_maven_version(Some(&paths), true).await
+                }
+            };
+
+            match tool_enum {
+                djuke_core::BuildTool::Gradle => {
+                    let _ = djuke_build::create_gradle_wrapper(&current_dir, Some(&resolved_v));
+                }
+                djuke_core::BuildTool::Maven => {
+                    let _ = djuke_build::create_maven_wrapper(&current_dir, Some(&resolved_v));
                 }
             }
 
-            println!("{}", "✔ Project initialized successfully!".green().bold());
+            // 2. Resolve JDK and immediately prime/cache the wrapper distribution
+            let jdk_spec = djuke_core::JdkSpec {
+                distribution: distro_choice
+                    .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
+                version: java_str,
+            };
+            if let Ok(installed_jdk) = resolve_jdk(&jdk_spec, &paths, true, cli.quiet).await {
+                let _ = djuke_build::prime_wrapper(
+                    tool_enum,
+                    &current_dir,
+                    &installed_jdk.java_home,
+                    &paths,
+                    cli.quiet,
+                )
+                .await;
+            }
+
+            println!(
+                "{}",
+                "✔ Project initialized and toolchain primed successfully!"
+                    .green()
+                    .bold()
+            );
             println!("\nNext steps:");
-            println!("  djuke setup");
             println!("  djuke run\n");
         }
 
@@ -1280,11 +1432,22 @@ async fn main() -> Result<()> {
                     if !cli.quiet {
                         println!("No wrapper detected. Bootstrapping {} wrapper...", t);
                     }
-                    let g_ver =
-                        djuke_build::compatible_gradle_version_for_java(&config.jdk_spec.version);
+                    let resolved_v = match t {
+                        BuildTool::Gradle => {
+                            djuke_build::resolve_dynamic_gradle_version(
+                                &config.jdk_spec.version,
+                                Some(&paths),
+                                true,
+                            )
+                            .await
+                        }
+                        BuildTool::Maven => {
+                            djuke_build::resolve_dynamic_maven_version(Some(&paths), true).await
+                        }
+                    };
                     if let Err(e) = djuke_build::bootstrap_wrapper(
                         t,
-                        Some(g_ver),
+                        Some(&resolved_v),
                         &config.project_root,
                         &installed_jdk.java_home,
                         &paths,
@@ -1295,7 +1458,7 @@ async fn main() -> Result<()> {
                         eprintln!("⚠ Wrapper generation failed: {}", e);
                         wrapper_status = "missing (generation failed)";
                     } else {
-                        wrapper_status = "generated";
+                        wrapper_status = "generated & primed";
                     }
                 }
             }
@@ -1323,14 +1486,36 @@ async fn main() -> Result<()> {
                     Some(BuildTool::Gradle),
                     &paths,
                 );
-                let v = version.as_deref().unwrap_or_else(|| {
-                    djuke_build::compatible_gradle_version_for_java(&config.jdk_spec.version)
-                });
-                djuke_build::create_gradle_wrapper(&config.project_root, Some(v))?;
+                let v = match version {
+                    Some(ver) => ver,
+                    None => {
+                        djuke_build::resolve_dynamic_gradle_version(
+                            &config.jdk_spec.version,
+                            Some(&paths),
+                            true,
+                        )
+                        .await
+                    }
+                };
+                djuke_build::create_gradle_wrapper(&config.project_root, Some(&v))?;
+                if let Ok(installed_jdk) =
+                    resolve_jdk(&config.jdk_spec, &paths, true, cli.quiet).await
+                {
+                    let _ = djuke_build::prime_wrapper(
+                        BuildTool::Gradle,
+                        &config.project_root,
+                        &installed_jdk.java_home,
+                        &paths,
+                        cli.quiet,
+                    )
+                    .await;
+                }
                 if !cli.quiet {
                     println!(
                         "{}",
-                        "✔ Gradle wrapper created successfully.".green().bold()
+                        "✔ Gradle wrapper created and primed successfully."
+                            .green()
+                            .bold()
                     );
                 }
             }
@@ -1385,9 +1570,30 @@ async fn main() -> Result<()> {
                     Some(BuildTool::Maven),
                     &paths,
                 );
-                djuke_build::create_maven_wrapper(&config.project_root, version.as_deref())?;
+                let v = match version {
+                    Some(ver) => ver,
+                    None => djuke_build::resolve_dynamic_maven_version(Some(&paths), true).await,
+                };
+                djuke_build::create_maven_wrapper(&config.project_root, Some(&v))?;
+                if let Ok(installed_jdk) =
+                    resolve_jdk(&config.jdk_spec, &paths, true, cli.quiet).await
+                {
+                    let _ = djuke_build::prime_wrapper(
+                        BuildTool::Maven,
+                        &config.project_root,
+                        &installed_jdk.java_home,
+                        &paths,
+                        cli.quiet,
+                    )
+                    .await;
+                }
                 if !cli.quiet {
-                    println!("{}", "✔ Maven wrapper created successfully.".green().bold());
+                    println!(
+                        "{}",
+                        "✔ Maven wrapper created and primed successfully."
+                            .green()
+                            .bold()
+                    );
                 }
             }
             None => {

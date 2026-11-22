@@ -181,10 +181,13 @@ Every command implementation in `djuke` MUST strictly obey the following four in
     - Uses CLI arguments or defaults: name `my-app`, template `cli`, build tool `gradle-kts`, Java 21, Temurin.
   - **Situation C (Destination Directory Exists & Non-Empty)**:
     - Aborts immediately with error: `"Target directory '<dest>' already exists and is not empty"`. Never overwrites.
-  - **Situation D (Wrapper & Tool Configuration Guarantee)**:
-    - Automatically bootstraps the latest compatible build tool wrapper from embedded assets in <5ms:
-      - Gradle: latest `9.9.2` for Java 17-27+ (or `8.14.8` for legacy Java 8-16).
-      - Maven: latest `3.9.16`.
+  - **Situation D (Dynamic Wrapper Resolution, Toolchain Priming & Zero-Wait Execution)**:
+    - Dynamically queries official remote APIs (`services.gradle.org/versions/current` for Gradle, Maven Central metadata for Maven) at execution time to discover the true latest release.
+    - Caches resolved tool versions in `~/.djuke/cache/tool_versions.json` (TTL: 24 hours); seamlessly falls back to embedded baseline constants (`9.9.2` / `3.9.16`) when offline or behind firewalls.
+    - Dynamically resolves framework versions (Spring Boot, Quarkus, Micronaut) from Maven Central when online.
+    - Dynamically resolves Java `latest` and `lts` aliases via Foojay Disco API.
+    - Ensures target JDK is available and **immediately primes and pre-downloads the wrapper distribution** (`gradlew --version` / `mvnw -v`) during project creation.
+    - When the developer runs `cd <project> && djuke run`, all toolchains and distributions are already verified and cached on disk—zero unexpected 150MB runtime downloads.
     - Automatically writes `gradle.properties` configuring parallel builds, caching, and `--enable-native-access=ALL-UNNAMED` for modern Java runtimes.
     - MUST write `djuke.toml` with project configuration.
 - **Exit Codes**: `0` on success, `1` on validation or IO failure.

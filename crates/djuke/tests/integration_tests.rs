@@ -187,6 +187,7 @@ fn test_end_to_end_scaffold_and_maven_dependency_lifecycle() {
         java_version: "21".to_string(),
         distribution: None,
         destination: project_dir.clone(),
+        framework_version: None,
     };
 
     generate_project(&opts).unwrap();
@@ -238,6 +239,7 @@ fn test_end_to_end_scaffold_and_gradle_kts_dependency_lifecycle() {
         java_version: "21".to_string(),
         distribution: None,
         destination: project_dir.clone(),
+        framework_version: None,
     };
 
     generate_project(&opts).unwrap();
@@ -285,6 +287,7 @@ fn test_end_to_end_project_init_in_place_and_dependency_tree() {
         java_version: "21".to_string(),
         distribution: None,
         destination: root.clone(),
+        framework_version: None,
     };
 
     generate_project(&opts).unwrap();
@@ -406,6 +409,7 @@ fn test_template_generation_with_custom_distro_and_latest_java() {
         java_version: "latest".to_string(),
         distribution: Some(JdkDistribution::Liberica),
         destination: project_dir.clone(),
+        framework_version: None,
     };
 
     generate_project(&opts).unwrap();
@@ -415,7 +419,7 @@ fn test_template_generation_with_custom_distro_and_latest_java() {
     assert!(djuke_toml.contains("version = \"latest\""));
 
     let build_kts = fs::read_to_string(project_dir.join("build.gradle.kts")).unwrap();
-    assert!(build_kts.contains("JavaLanguageVersion.of(23)"));
+    assert!(build_kts.contains("JavaLanguageVersion.of(25)"));
 }
 
 #[test]
@@ -497,4 +501,57 @@ fn test_gradle_wrapper_compatible_version_selection_for_java_27_and_modern_runti
     assert!(gradle_props.contains("--enable-native-access=ALL-UNNAMED"));
     assert!(gradle_props.contains("org.gradle.parallel=true"));
     assert!(gradle_props.contains("org.gradle.caching=true"));
+}
+
+#[tokio::test]
+async fn test_dynamic_wrapper_version_resolution_and_caching() {
+    use djuke_build::{resolve_dynamic_gradle_version, resolve_dynamic_maven_version};
+
+    let dir = tempdir().unwrap();
+    let paths = DjukePaths {
+        root: dir.path().join(".djuke-home"),
+    };
+    paths.ensure_dirs().unwrap();
+
+    // 1. Resolve Gradle dynamically online
+    let g_ver = resolve_dynamic_gradle_version("21", Some(&paths), true).await;
+    assert!(!g_ver.is_empty());
+    assert!(g_ver.starts_with('9') || g_ver.starts_with('8'));
+
+    // 2. Verify cache file was created in ~/.djuke-home/cache/tool_versions.json
+    let cache_file = paths.cache_dir().join("tool_versions.json");
+    assert!(cache_file.is_file());
+
+    // 3. Resolve Maven dynamically online
+    let m_ver = resolve_dynamic_maven_version(Some(&paths), true).await;
+    assert!(!m_ver.is_empty());
+    assert!(m_ver.starts_with("3.9"));
+
+    // 4. Verify offline fallback resolves instantly without network
+    let offline_g = resolve_dynamic_gradle_version("21", Some(&paths), false).await;
+    assert_eq!(offline_g, g_ver);
+}
+
+#[test]
+fn test_template_generation_with_custom_dynamic_framework_version() {
+    use djuke_templates::{generate_project, BuildToolChoice, NewProjectOptions, TemplateType};
+
+    let dir = tempdir().unwrap();
+    let project_dir = dir.path().join("spring-custom-ver");
+
+    let opts = NewProjectOptions {
+        name: "spring-custom-ver".to_string(),
+        group_id: "com.example.spring".to_string(),
+        template: TemplateType::SpringBoot,
+        build_tool: BuildToolChoice::GradleKts,
+        java_version: "21".to_string(),
+        distribution: None,
+        destination: project_dir.clone(),
+        framework_version: Some("3.5.3".to_string()),
+    };
+
+    generate_project(&opts).unwrap();
+
+    let build_kts = fs::read_to_string(project_dir.join("build.gradle.kts")).unwrap();
+    assert!(build_kts.contains("3.5.3"));
 }
