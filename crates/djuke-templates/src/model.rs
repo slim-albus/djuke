@@ -91,6 +91,47 @@ impl FromStr for BuildToolChoice {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TestFramework {
+    #[default]
+    JUnit5,
+    AssertJ,
+    Spock,
+    TestNG,
+    None,
+}
+
+impl fmt::Display for TestFramework {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::JUnit5 => write!(f, "junit5"),
+            Self::AssertJ => write!(f, "assertj"),
+            Self::Spock => write!(f, "spock"),
+            Self::TestNG => write!(f, "testng"),
+            Self::None => write!(f, "none"),
+        }
+    }
+}
+
+impl FromStr for TestFramework {
+    type Err = DjukeError;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "junit" | "junit5" | "jupiter" => Ok(Self::JUnit5),
+            "assertj" | "assert-j" => Ok(Self::AssertJ),
+            "spock" => Ok(Self::Spock),
+            "testng" | "test-ng" => Ok(Self::TestNG),
+            "none" | "skip" | "no" | "false" => Ok(Self::None),
+            other => Err(DjukeError::Generic(format!(
+                "Unknown test framework '{}'. Available: junit5, assertj, spock, testng, none",
+                other
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NewProjectOptions {
     pub name: String,
@@ -103,6 +144,7 @@ pub struct NewProjectOptions {
     pub framework_version: Option<String>,
     pub initializr_dependencies: Option<Vec<String>>,
     pub skip_initializr: bool,
+    pub test_framework: TestFramework,
 }
 
 impl NewProjectOptions {
@@ -126,6 +168,7 @@ impl NewProjectOptions {
             framework_version: None,
             initializr_dependencies: None,
             skip_initializr: false,
+            test_framework: TestFramework::JUnit5,
         }
     }
 }

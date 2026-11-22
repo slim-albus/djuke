@@ -190,35 +190,44 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
 
     // 5. Global Default JDK
     let global_config = load_global_config(&paths.config_file()).unwrap_or_default();
-    let (g_distro, g_ver) = match &global_config.java {
-        Some(j) => (
-            j.default_distribution
-                .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
-            j.default_version
-                .clone()
-                .unwrap_or_else(|| "21".to_string()),
-        ),
-        None => (djuke_core::JdkDistribution::Temurin, "21".to_string()),
-    };
-    let global_spec = djuke_core::JdkSpec::new(g_distro, g_ver);
-    let global_installed = store.find_installed(&global_spec).is_some();
-    checks.push(HealthCheckResult {
-        name: "Global Default Java".into(),
-        status: global_installed,
-        message: if global_installed {
-            format!("{} (installed locally)", global_spec)
-        } else {
-            format!("{} (not installed locally)", global_spec)
-        },
-        hint: if !global_installed {
-            Some(format!(
-                "Run 'djuke java install {}' to install the global default JDK",
-                global_spec.version
-            ))
-        } else {
-            None
-        },
-    });
+    if let Some(j) = &global_config.java {
+        let g_distro = j
+            .default_distribution
+            .unwrap_or_else(djuke_core::JdkDistribution::default_distro);
+        let g_ver = j
+            .default_version
+            .clone()
+            .unwrap_or_else(|| "21".to_string());
+        let global_spec = djuke_core::JdkSpec::new(g_distro, g_ver);
+        let global_installed = store.find_installed(&global_spec).is_some();
+        checks.push(HealthCheckResult {
+            name: "Global Default Java".into(),
+            status: global_installed,
+            message: if global_installed {
+                format!("{} (installed locally)", global_spec)
+            } else {
+                format!("{} (not installed locally)", global_spec)
+            },
+            hint: if !global_installed {
+                Some(format!(
+                    "Run 'djuke use {} --global' to install and activate this JDK",
+                    global_spec.version
+                ))
+            } else {
+                None
+            },
+        });
+    } else {
+        checks.push(HealthCheckResult {
+            name: "Global Default Java".into(),
+            status: true,
+            message: "Not configured (run 'djuke use' to set your preferred runtime)".into(),
+            hint: Some(
+                "Run 'djuke use' to interactively select or install your preferred default Java"
+                    .into(),
+            ),
+        });
+    }
 
     // 6. System PATH Java detection
     let system_java = detect_system_java();

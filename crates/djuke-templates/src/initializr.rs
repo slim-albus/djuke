@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
@@ -6,6 +7,14 @@ use djuke_core::{DjukeError, JdkDistribution, Result};
 use crate::model::{BuildToolChoice, NewProjectOptions};
 
 pub const SPRING_INITIALIZR_URL: &str = "https://start.spring.io";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitializrDependency {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub category: String,
+}
 
 /// Client for interacting with the official Spring Initializr API.
 pub struct SpringInitializrClient {
@@ -40,6 +49,199 @@ impl SpringInitializrClient {
             .await
             .map(|r| r.status().is_success() || r.status().is_redirection())
             .unwrap_or(false)
+    }
+
+    /// Fetch available dependencies from Spring Initializr metadata API with local fallback
+    pub async fn fetch_dependencies(&self) -> Vec<InitializrDependency> {
+        let resp = self
+            .client
+            .get(&self.base_url)
+            .header("Accept", "application/vnd.initializr.v2.1+json")
+            .timeout(std::time::Duration::from_secs(4))
+            .send()
+            .await;
+
+        if let Ok(r) = resp {
+            if r.status().is_success() {
+                if let Ok(json) = r.json::<serde_json::Value>().await {
+                    if let Some(cats) = json
+                        .get("dependencies")
+                        .and_then(|d| d.get("values"))
+                        .and_then(|v| v.as_array())
+                    {
+                        let mut res = Vec::new();
+                        for cat in cats {
+                            let cat_name = cat
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("General")
+                                .to_string();
+                            if let Some(items) = cat.get("values").and_then(|v| v.as_array()) {
+                                for item in items {
+                                    if let (Some(id), Some(name)) = (
+                                        item.get("id").and_then(|i| i.as_str()),
+                                        item.get("name").and_then(|n| n.as_str()),
+                                    ) {
+                                        let desc = item
+                                            .get("description")
+                                            .and_then(|d| d.as_str())
+                                            .map(|s| s.to_string());
+                                        res.push(InitializrDependency {
+                                            id: id.to_string(),
+                                            name: name.to_string(),
+                                            description: desc,
+                                            category: cat_name.clone(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        if !res.is_empty() {
+                            return res;
+                        }
+                    }
+                }
+            }
+        }
+
+        Self::fallback_dependencies()
+    }
+
+    pub fn fallback_dependencies() -> Vec<InitializrDependency> {
+        vec![
+            InitializrDependency {
+                id: "web".into(),
+                name: "Spring Web".into(),
+                description: Some(
+                    "Build web and RESTful applications using Spring MVC and Apache Tomcat".into(),
+                ),
+                category: "Web".into(),
+            },
+            InitializrDependency {
+                id: "actuator".into(),
+                name: "Spring Boot Actuator".into(),
+                description: Some(
+                    "Production-ready features to monitor and manage applications".into(),
+                ),
+                category: "Ops".into(),
+            },
+            InitializrDependency {
+                id: "data-jpa".into(),
+                name: "Spring Data JPA".into(),
+                description: Some(
+                    "Persist data in SQL stores with Java Persistence API & Hibernate".into(),
+                ),
+                category: "SQL".into(),
+            },
+            InitializrDependency {
+                id: "postgresql".into(),
+                name: "PostgreSQL Driver".into(),
+                description: Some("PostgreSQL JDBC driver".into()),
+                category: "SQL".into(),
+            },
+            InitializrDependency {
+                id: "mysql".into(),
+                name: "MySQL Driver".into(),
+                description: Some("MySQL JDBC driver".into()),
+                category: "SQL".into(),
+            },
+            InitializrDependency {
+                id: "h2".into(),
+                name: "H2 Database".into(),
+                description: Some("Fast in-memory SQL database for development and testing".into()),
+                category: "SQL".into(),
+            },
+            InitializrDependency {
+                id: "security".into(),
+                name: "Spring Security".into(),
+                description: Some(
+                    "Authentication, authorization, and protection against common attacks".into(),
+                ),
+                category: "Security".into(),
+            },
+            InitializrDependency {
+                id: "validation".into(),
+                name: "Validation".into(),
+                description: Some("Bean Validation with Hibernate Validator".into()),
+                category: "I/O".into(),
+            },
+            InitializrDependency {
+                id: "lombok".into(),
+                name: "Lombok".into(),
+                description: Some(
+                    "Java annotation library to reduce boilerplate code (getters, builders, logs)"
+                        .into(),
+                ),
+                category: "Developer Tools".into(),
+            },
+            InitializrDependency {
+                id: "devtools".into(),
+                name: "Spring Boot DevTools".into(),
+                description: Some(
+                    "Fast application restarts, LiveReload, and dev configurations".into(),
+                ),
+                category: "Developer Tools".into(),
+            },
+            InitializrDependency {
+                id: "data-redis".into(),
+                name: "Spring Data Redis".into(),
+                description: Some("Redis key-value data store support".into()),
+                category: "NoSQL".into(),
+            },
+            InitializrDependency {
+                id: "kafka".into(),
+                name: "Spring for Apache Kafka".into(),
+                description: Some(
+                    "Publish, subscribe, and stream processing with Apache Kafka".into(),
+                ),
+                category: "Messaging".into(),
+            },
+            InitializrDependency {
+                id: "docker-compose".into(),
+                name: "Docker Compose Support".into(),
+                description: Some("Container management via Docker Compose files".into()),
+                category: "Developer Tools".into(),
+            },
+            InitializrDependency {
+                id: "testcontainers".into(),
+                name: "Testcontainers".into(),
+                description: Some(
+                    "Lightweight, throwaway containerized dependencies for unit/integration tests"
+                        .into(),
+                ),
+                category: "Testing".into(),
+            },
+            InitializrDependency {
+                id: "graphql".into(),
+                name: "Spring for GraphQL".into(),
+                description: Some("Build GraphQL applications with Spring and GraphQL Java".into()),
+                category: "Web".into(),
+            },
+            InitializrDependency {
+                id: "websocket".into(),
+                name: "WebSocket".into(),
+                description: Some(
+                    "Build WebSocket applications with SockJS and STOMP messaging".into(),
+                ),
+                category: "Web".into(),
+            },
+            InitializrDependency {
+                id: "mail".into(),
+                name: "Java Mail Sender".into(),
+                description: Some(
+                    "Send emails using JavaMail and Spring email abstractions".into(),
+                ),
+                category: "I/O".into(),
+            },
+            InitializrDependency {
+                id: "quartz".into(),
+                name: "Quartz Scheduler".into(),
+                description: Some(
+                    "Job scheduling library for background workers and cron jobs".into(),
+                ),
+                category: "I/O".into(),
+            },
+        ]
     }
 
     /// Download and unpack a Spring Boot starter project directly into destination
