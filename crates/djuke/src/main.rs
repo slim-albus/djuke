@@ -2,6 +2,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use miette::Result;
 use std::env;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use djuke_build::{execute_task, TaskExecution};
@@ -52,40 +53,41 @@ enum Commands {
     #[command(about = "Create a new Java project from a template")]
     New {
         #[arg(help = "Project name or destination directory")]
-        name: String,
+        name: Option<String>,
 
         #[arg(
             short,
             long,
-            default_value = "cli",
             help = "Template type: cli, lib, spring-boot, quarkus, micronaut"
         )]
-        template: String,
+        template: Option<String>,
 
         #[arg(
             short = 'b',
             long = "build-tool",
-            default_value = "gradle-kts",
             help = "Build tool: gradle-kts, gradle-groovy, maven"
         )]
-        build_tool: String,
+        build_tool: Option<String>,
 
-        #[arg(long, default_value = "com.example", help = "Root package / group ID")]
-        group: String,
+        #[arg(long, help = "Root package / group ID (default: com.example)")]
+        group: Option<String>,
 
-        #[arg(
-            long,
-            default_value = "21",
-            help = "Target Java version (number, 'latest', or 'lts')"
-        )]
-        java: String,
+        #[arg(long, help = "Target Java version (number, 'latest', or 'lts')")]
+        java: Option<String>,
 
         #[arg(
             short = 'd',
             long = "distro",
-            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+            help = "JDK distribution: temurin, openjdk, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
         )]
         distro: Option<JdkDistribution>,
+
+        #[arg(
+            short = 'y',
+            long = "yes",
+            help = "Skip interactive prompts and use defaults"
+        )]
+        yes: bool,
     },
 
     #[command(about = "Initialize a new Java project in the current directory")]
@@ -100,35 +102,36 @@ enum Commands {
         #[arg(
             short,
             long,
-            default_value = "cli",
             help = "Template type: cli, lib, spring-boot, quarkus, micronaut"
         )]
-        template: String,
+        template: Option<String>,
 
         #[arg(
             short = 'b',
             long = "build-tool",
-            default_value = "gradle-kts",
             help = "Build tool: gradle-kts, gradle-groovy, maven"
         )]
-        build_tool: String,
+        build_tool: Option<String>,
 
-        #[arg(long, default_value = "com.example", help = "Root package / group ID")]
-        group: String,
+        #[arg(long, help = "Root package / group ID (default: com.example)")]
+        group: Option<String>,
 
-        #[arg(
-            long,
-            default_value = "21",
-            help = "Target Java version (number, 'latest', or 'lts')"
-        )]
-        java: String,
+        #[arg(long, help = "Target Java version (number, 'latest', or 'lts')")]
+        java: Option<String>,
 
         #[arg(
             short = 'd',
             long = "distro",
-            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+            help = "JDK distribution: temurin, openjdk, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
         )]
         distro: Option<JdkDistribution>,
+
+        #[arg(
+            short = 'y',
+            long = "yes",
+            help = "Skip interactive prompts and use defaults"
+        )]
+        yes: bool,
     },
 
     #[command(about = "Add a dependency to the current project (Maven or Gradle)")]
@@ -180,7 +183,7 @@ enum Commands {
         #[arg(
             short = 'd',
             long = "distro",
-            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+            help = "JDK distribution: temurin, openjdk, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
         )]
         distro: Option<JdkDistribution>,
     },
@@ -453,7 +456,7 @@ enum JavaSubcommands {
         #[arg(
             short,
             long,
-            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+            help = "JDK distribution: temurin, openjdk, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
         )]
         distro: Option<JdkDistribution>,
     },
@@ -469,7 +472,7 @@ enum JavaSubcommands {
         #[arg(
             short,
             long,
-            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+            help = "JDK distribution: temurin, openjdk, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
         )]
         distro: Option<JdkDistribution>,
     },
@@ -482,7 +485,7 @@ enum JavaSubcommands {
         #[arg(
             short,
             long,
-            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+            help = "JDK distribution: temurin, openjdk, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
         )]
         distro: Option<JdkDistribution>,
 
@@ -501,6 +504,206 @@ enum JavaSubcommands {
         #[arg(help = "JDK id, version, or folder name to remove")]
         target: String,
     },
+}
+
+struct CliProjectOptions {
+    is_init: bool,
+    current_dir: PathBuf,
+    name: Option<String>,
+    template: Option<String>,
+    build_tool: Option<String>,
+    group: Option<String>,
+    java: Option<String>,
+    distro: Option<JdkDistribution>,
+    yes: bool,
+}
+
+fn resolve_project_options(
+    opts: CliProjectOptions,
+) -> Result<(
+    String,
+    djuke_templates::TemplateType,
+    djuke_templates::BuildToolChoice,
+    String,
+    String,
+    Option<JdkDistribution>,
+)> {
+    let is_interactive = !opts.yes && std::io::stdin().is_terminal();
+    let theme = dialoguer::theme::ColorfulTheme::default();
+
+    // 1. Resolve Project Name
+    let name = match opts.name {
+        Some(n) if !n.trim().is_empty() => n.trim().to_string(),
+        _ => {
+            if is_interactive {
+                let default_name = if opts.is_init {
+                    opts.current_dir
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("app")
+                        .to_string()
+                } else {
+                    "my-app".to_string()
+                };
+                dialoguer::Input::with_theme(&theme)
+                    .with_prompt("Project name")
+                    .default(default_name)
+                    .interact_text()
+                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?
+            } else if opts.is_init {
+                opts.current_dir
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("app")
+                    .to_string()
+            } else {
+                "my-app".to_string()
+            }
+        }
+    };
+
+    // 2. Resolve Template
+    let template = match opts.template {
+        Some(t) => t.parse()?,
+        None => {
+            if is_interactive {
+                let templates = [
+                    "CLI Application        - Minimal Java console app with Main class",
+                    "Library                - Reusable Java library",
+                    "Spring Boot Web API    - Full-stack web application with Spring Boot & Actuator",
+                    "Quarkus REST API       - High-performance reactive microservice",
+                    "Micronaut Microservice - Cloud-native modular Java application",
+                ];
+                let idx = dialoguer::Select::with_theme(&theme)
+                    .with_prompt("Select project template")
+                    .items(&templates)
+                    .default(0)
+                    .interact()
+                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                match idx {
+                    0 => djuke_templates::TemplateType::Cli,
+                    1 => djuke_templates::TemplateType::Lib,
+                    2 => djuke_templates::TemplateType::SpringBoot,
+                    3 => djuke_templates::TemplateType::Quarkus,
+                    4 => djuke_templates::TemplateType::Micronaut,
+                    _ => djuke_templates::TemplateType::Cli,
+                }
+            } else {
+                djuke_templates::TemplateType::Cli
+            }
+        }
+    };
+
+    // 3. Resolve Build Tool
+    let build_tool = match opts.build_tool {
+        Some(b) => b.parse()?,
+        None => {
+            if is_interactive {
+                let tools = [
+                    "Gradle (Kotlin DSL - build.gradle.kts) [Recommended]",
+                    "Gradle (Groovy DSL - build.gradle)",
+                    "Maven (pom.xml)",
+                ];
+                let idx = dialoguer::Select::with_theme(&theme)
+                    .with_prompt("Select build tool")
+                    .items(&tools)
+                    .default(0)
+                    .interact()
+                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                match idx {
+                    0 => djuke_templates::BuildToolChoice::GradleKts,
+                    1 => djuke_templates::BuildToolChoice::GradleGroovy,
+                    2 => djuke_templates::BuildToolChoice::Maven,
+                    _ => djuke_templates::BuildToolChoice::GradleKts,
+                }
+            } else {
+                djuke_templates::BuildToolChoice::GradleKts
+            }
+        }
+    };
+
+    // 4. Resolve Java Version
+    let java = match opts.java {
+        Some(j) => j,
+        None => {
+            if is_interactive {
+                let versions = [
+                    "21 (LTS - Recommended)",
+                    "17 (LTS)",
+                    "23 (Latest GA)",
+                    "25 (LTS)",
+                    "Custom version...",
+                ];
+                let idx = dialoguer::Select::with_theme(&theme)
+                    .with_prompt("Select target Java version")
+                    .items(&versions)
+                    .default(0)
+                    .interact()
+                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                match idx {
+                    0 => "21".to_string(),
+                    1 => "17".to_string(),
+                    2 => "23".to_string(),
+                    3 => "25".to_string(),
+                    4 => dialoguer::Input::with_theme(&theme)
+                        .with_prompt("Enter target Java version")
+                        .default("21".to_string())
+                        .interact_text()
+                        .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?,
+                    _ => "21".to_string(),
+                }
+            } else {
+                "21".to_string()
+            }
+        }
+    };
+
+    // 5. Resolve JDK Distribution / Flavour
+    let distro = match opts.distro {
+        Some(d) => Some(d),
+        None => {
+            if is_interactive {
+                let distros = [
+                    "Eclipse Temurin [Default]",
+                    "OpenJDK (Official Oracle OpenJDK / jdk.java.net)",
+                    "Amazon Corretto",
+                    "Azul Zulu",
+                    "Microsoft Build of OpenJDK",
+                    "GraalVM Community (Native Image)",
+                    "BellSoft Liberica",
+                    "Oracle JDK",
+                    "SAP SapMachine",
+                    "IBM Semeru (OpenJ9)",
+                ];
+                let idx = dialoguer::Select::with_theme(&theme)
+                    .with_prompt("Select JDK distribution (flavour)")
+                    .items(&distros)
+                    .default(0)
+                    .interact()
+                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                match idx {
+                    0 => Some(JdkDistribution::Temurin),
+                    1 => Some(JdkDistribution::OpenJdk),
+                    2 => Some(JdkDistribution::Corretto),
+                    3 => Some(JdkDistribution::Zulu),
+                    4 => Some(JdkDistribution::Microsoft),
+                    5 => Some(JdkDistribution::Graalvm),
+                    6 => Some(JdkDistribution::Liberica),
+                    7 => Some(JdkDistribution::Oracle),
+                    8 => Some(JdkDistribution::Sapmachine),
+                    9 => Some(JdkDistribution::Semeru),
+                    _ => Some(JdkDistribution::Temurin),
+                }
+            } else {
+                Some(JdkDistribution::Temurin)
+            }
+        }
+    };
+
+    // 6. Group ID
+    let group = opts.group.unwrap_or_else(|| "com.example".to_string());
+
+    Ok((name, template, build_tool, group, java, distro))
 }
 
 #[tokio::main]
@@ -535,8 +738,22 @@ async fn main() -> Result<()> {
             group,
             java,
             distro,
+            yes,
         } => {
-            let dest = current_dir.join(&name);
+            let (proj_name, t_type, b_tool, group_id, java_ver, distro_choice) =
+                resolve_project_options(CliProjectOptions {
+                    is_init: false,
+                    current_dir: current_dir.clone(),
+                    name,
+                    template,
+                    build_tool,
+                    group,
+                    java,
+                    distro,
+                    yes,
+                })?;
+
+            let dest = current_dir.join(&proj_name);
             if dest.exists()
                 && dest
                     .read_dir()
@@ -550,23 +767,20 @@ async fn main() -> Result<()> {
                 .into());
             }
 
-            let t_type: djuke_templates::TemplateType = template.parse()?;
-            let b_tool: djuke_templates::BuildToolChoice = build_tool.parse()?;
-
             println!(
                 "{}",
-                format!("Creating new Java {} project '{}'...", t_type, name)
+                format!("Creating new Java {} project '{}'...", t_type, proj_name)
                     .bold()
                     .cyan()
             );
 
             let opts = djuke_templates::NewProjectOptions {
-                name: name.clone(),
-                group_id: group,
+                name: proj_name.clone(),
+                group_id,
                 template: t_type,
                 build_tool: b_tool,
-                java_version: java,
-                distribution: distro,
+                java_version: java_ver,
+                distribution: distro_choice,
                 destination: dest.clone(),
             };
 
@@ -574,7 +788,7 @@ async fn main() -> Result<()> {
 
             println!("{}", "✔ Project initialized successfully!".green().bold());
             println!("\nNext steps:");
-            println!("  cd {}", name.bold());
+            println!("  cd {}", proj_name.bold());
             println!("  djuke setup");
             println!("  djuke run\n");
         }
@@ -586,35 +800,38 @@ async fn main() -> Result<()> {
             group,
             java,
             distro,
+            yes,
         } => {
-            let project_name = name.unwrap_or_else(|| {
-                current_dir
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("app")
-                    .to_string()
-            });
-
-            let t_type: djuke_templates::TemplateType = template.parse()?;
-            let b_tool: djuke_templates::BuildToolChoice = build_tool.parse()?;
+            let (proj_name, t_type, b_tool, group_id, java_ver, distro_choice) =
+                resolve_project_options(CliProjectOptions {
+                    is_init: true,
+                    current_dir: current_dir.clone(),
+                    name,
+                    template,
+                    build_tool,
+                    group,
+                    java,
+                    distro,
+                    yes,
+                })?;
 
             println!(
                 "{}",
                 format!(
                     "Initializing Java {} project '{}' in current directory...",
-                    t_type, project_name
+                    t_type, proj_name
                 )
                 .bold()
                 .cyan()
             );
 
             let opts = djuke_templates::NewProjectOptions {
-                name: project_name.clone(),
-                group_id: group,
+                name: proj_name.clone(),
+                group_id,
                 template: t_type,
                 build_tool: b_tool,
-                java_version: java,
-                distribution: distro,
+                java_version: java_ver,
+                distribution: distro_choice,
                 destination: current_dir.clone(),
             };
 

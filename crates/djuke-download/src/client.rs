@@ -1,25 +1,19 @@
-use bytes::Bytes;
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::fs::File;
-use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncWriteExt, BufWriter};
 
 use djuke_core::{DjukeError, Result};
 
 use crate::checksum::verify_checksum;
 
-const MIN_PARALLEL_SIZE: u64 = 6 * 1024 * 1024; // 6 MB minimum for multi-part
-const CHUNK_SIZE: u64 = 16 * 1024 * 1024; // 16 MB chunk target
-const MAX_CONCURRENT_STREAMS: usize = 8;
-const BUFFER_CAPACITY: usize = 2 * 1024 * 1024; // 2 MB I/O buffer
-
-struct WriteMessage {
-    offset: u64,
-    data: Bytes,
-}
+const MIN_PARALLEL_SIZE: u64 = 4 * 1024 * 1024; // 4 MB minimum for multi-part
+const CHUNK_SIZE: u64 = 12 * 1024 * 1024; // 12 MB chunk target
+const MAX_CONCURRENT_STREAMS: usize = 12; // Up to 12 parallel streams
+const BUFFER_CAPACITY: usize = 4 * 1024 * 1024; // 4 MB I/O buffer
 
 pub struct Downloader {
     client: reqwest::Client,
@@ -33,7 +27,7 @@ impl Downloader {
             .user_agent("djuke/0.1.0")
             .tcp_nodelay(true)
             .tcp_keepalive(Some(Duration::from_secs(60)))
-            .pool_max_idle_per_host(32)
+            .pool_max_idle_per_host(64)
             .pool_idle_timeout(Some(Duration::from_secs(90)))
             .redirect(reqwest::redirect::Policy::limited(10))
             .build()
@@ -148,27 +142,24 @@ impl Downloader {
                 MAX_CONCURRENT_STREAMS as u64,
                 total_size.div_ceil(CHUNK_SIZE),
             ),
-        );
-        let chunk_size = total_size.div_ceil(num_chunks);
+        ) as usize;
+        let chunk_size = total_size.div_ceil(num_chunks as u64);
 
-        let mut ranges = Vec::new();
+        let mut ranges = Vec::with_capacity(num_chunks);
+        let mut part_paths: Vec<PathBuf> = Vec::with_capacity(num_chunks);
+
         for i in 0..num_chunks {
-            let start = i * chunk_size;
+            let start = (i as u64) * chunk_size;
             let end = std::cmp::min(start + chunk_size - 1, total_size - 1);
             if start <= end {
-                ranges.push((start, end));
+                ranges.push((i, start, end));
+                part_paths.push(PathBuf::from(format!(
+                    "{}.part_{}.tmp",
+                    destination.display(),
+                    i
+                )));
             }
         }
-
-        // Pre-allocate the destination file
-        let file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(destination)
-            .await?;
-        file.set_len(total_size).await?;
-        drop(file);
 
         // Progress bar with speed monitoring
         let pb = if self.quiet {
@@ -182,39 +173,20 @@ impl Downloader {
                     .progress_chars("#>-"),
             );
             p.set_message(title.to_string());
-            p.enable_steady_tick(Duration::from_millis(150));
+            p.enable_steady_tick(Duration::from_millis(100));
             Some(Arc::new(p))
         };
 
-        // Dedicated writer task to handle non-blocking disk writes without seek contention
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<WriteMessage>(128);
-        let dest_path = destination.to_path_buf();
-
-        let writer_task = tokio::spawn(async move {
-            let mut file = tokio::fs::OpenOptions::new()
-                .write(true)
-                .open(&dest_path)
-                .await?;
-
-            while let Some(msg) = rx.recv().await {
-                file.seek(std::io::SeekFrom::Start(msg.offset)).await?;
-                file.write_all(&msg.data).await?;
-            }
-
-            file.flush().await?;
-            Ok::<(), std::io::Error>(())
-        });
-
-        // Spawn parallel chunk download workers
+        // Spawn parallel chunk download workers writing directly to isolated sequential part files
         let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_STREAMS));
         let mut handles = Vec::new();
 
-        for (start, end) in ranges {
+        for (idx, start, end) in ranges {
             let permit = semaphore.clone().acquire_owned().await.unwrap();
             let client = self.client.clone();
             let worker_url = url.clone();
-            let tx = tx.clone();
             let pb = pb.clone();
+            let part_path = part_paths[idx].clone();
 
             let handle = tokio::spawn(async move {
                 let _permit = permit;
@@ -227,27 +199,21 @@ impl Downloader {
 
                     match req.send().await {
                         Ok(resp) if resp.status().is_success() => {
+                            let file = File::create(&part_path).await?;
+                            let mut writer = BufWriter::with_capacity(BUFFER_CAPACITY, file);
                             let mut stream = resp.bytes_stream();
-                            let mut offset = start;
+                            let mut bytes_downloaded = 0u64;
+                            let expected_bytes = end - start + 1;
                             let mut stream_ok = true;
 
                             while let Some(chunk_res) = stream.next().await {
                                 match chunk_res {
                                     Ok(bytes) => {
                                         let len = bytes.len() as u64;
-                                        if let Err(e) = tx
-                                            .send(WriteMessage {
-                                                offset,
-                                                data: bytes,
-                                            })
-                                            .await
-                                        {
-                                            return Err(DjukeError::Process(format!(
-                                                "Writer channel closed: {}",
-                                                e
-                                            )));
+                                        if let Err(e) = writer.write_all(&bytes).await {
+                                            return Err(DjukeError::Io(e));
                                         }
-                                        offset += len;
+                                        bytes_downloaded += len;
                                         if let Some(p) = &pb {
                                             p.inc(len);
                                         }
@@ -259,8 +225,15 @@ impl Downloader {
                                 }
                             }
 
-                            if stream_ok && offset > end {
-                                return Ok(());
+                            if stream_ok {
+                                if let Err(e) = writer.flush().await {
+                                    return Err(DjukeError::Io(e));
+                                }
+                                drop(writer);
+
+                                if bytes_downloaded == expected_bytes {
+                                    return Ok(());
+                                }
                             }
                         }
                         _ => {}
@@ -268,6 +241,7 @@ impl Downloader {
 
                     retries -= 1;
                     if retries == 0 {
+                        let _ = tokio::fs::remove_file(&part_path).await;
                         return Err(DjukeError::Network(format!(
                             "Failed to download byte range {}-{} after 3 attempts",
                             start, end
@@ -280,18 +254,44 @@ impl Downloader {
             handles.push(handle);
         }
 
-        // Drop our sender so writer channel closes once workers complete
-        drop(tx);
-
+        // Await all chunk downloaders
         for h in handles {
-            h.await
-                .map_err(|e| DjukeError::Process(format!("Download worker panicked: {}", e)))??;
+            match h.await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    // Cleanup part files
+                    for p in &part_paths {
+                        let _ = tokio::fs::remove_file(p).await;
+                    }
+                    return Err(e);
+                }
+                Err(e) => {
+                    for p in &part_paths {
+                        let _ = tokio::fs::remove_file(p).await;
+                    }
+                    return Err(DjukeError::Process(format!(
+                        "Download worker panicked: {}",
+                        e
+                    )));
+                }
+            }
         }
 
-        writer_task
-            .await
-            .map_err(|e| DjukeError::Process(format!("Download writer panicked: {}", e)))?
-            .map_err(DjukeError::Io)?;
+        // Fast sequential merge of part files on disk
+        let dest_file = File::create(destination).await?;
+        let mut dest_writer = BufWriter::with_capacity(BUFFER_CAPACITY, dest_file);
+
+        for part in &part_paths {
+            if part.exists() {
+                let mut part_file = File::open(part).await?;
+                tokio::io::copy(&mut part_file, &mut dest_writer).await?;
+                drop(part_file);
+                let _ = tokio::fs::remove_file(part).await;
+            }
+        }
+
+        dest_writer.flush().await?;
+        drop(dest_writer);
 
         if let Some(p) = pb {
             p.finish_with_message(format!("Downloaded {}", title));
@@ -345,7 +345,7 @@ impl Downloader {
                 }
             };
             p.set_message(title.to_string());
-            p.enable_steady_tick(Duration::from_millis(150));
+            p.enable_steady_tick(Duration::from_millis(100));
             Some(p)
         };
 
@@ -373,7 +373,7 @@ impl Downloader {
     }
 
     fn verify_and_finalize(&self, destination: &Path, expected_sha256: Option<&str>) -> Result<()> {
-        if let Some(expected) = expected_sha256 {
+        if let Some(expected) = expected_sha256.filter(|c| !c.trim().is_empty()) {
             if let Err(e) = verify_checksum(destination, expected) {
                 let _ = std::fs::remove_file(destination);
                 return Err(e);

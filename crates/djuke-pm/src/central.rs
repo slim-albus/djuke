@@ -33,9 +33,21 @@ pub struct MavenCentralClient {
 
 impl Default for MavenCentralClient {
     fn default() -> Self {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::ACCEPT,
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
+        headers.insert(
+            reqwest::header::USER_AGENT,
+            reqwest::header::HeaderValue::from_static(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            ),
+        );
+
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(15))
-            .user_agent("djuke/0.1.0")
+            .timeout(std::time::Duration::from_secs(30))
+            .default_headers(headers)
             .build()
             .unwrap_or_default();
         Self { client }

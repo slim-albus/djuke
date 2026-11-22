@@ -367,12 +367,13 @@ async fn test_doctor_reports_unready_when_no_jdk_installed() {
 }
 
 #[test]
-fn test_jdk_distribution_support_all_9_distros() {
+fn test_jdk_distribution_support_all_10_distros() {
     use djuke_core::JdkDistribution;
     use std::str::FromStr;
 
     let distros = [
         ("temurin", JdkDistribution::Temurin),
+        ("openjdk", JdkDistribution::OpenJdk),
         ("corretto", JdkDistribution::Corretto),
         ("zulu", JdkDistribution::Zulu),
         ("microsoft", JdkDistribution::Microsoft),

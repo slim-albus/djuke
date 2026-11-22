@@ -50,7 +50,7 @@ pub async fn install_jdk(spec: &JdkSpec, paths: &DjukePaths, quiet: bool) -> Res
         .map(|s| s.eq_ignore_ascii_case("sha256"))
         .unwrap_or(true)
     {
-        package.checksum.as_deref()
+        package.checksum.as_deref().filter(|c| !c.trim().is_empty())
     } else {
         None
     };

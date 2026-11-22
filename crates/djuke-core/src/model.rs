@@ -11,6 +11,7 @@ use crate::error::{DjukeError, Result};
 #[serde(rename_all = "lowercase")]
 pub enum JdkDistribution {
     Temurin,
+    OpenJdk,
     Corretto,
     Zulu,
     Microsoft,
@@ -25,6 +26,7 @@ impl JdkDistribution {
     pub fn as_disco_name(&self) -> &'static str {
         match self {
             Self::Temurin => "temurin",
+            Self::OpenJdk => "oracle_open_jdk",
             Self::Corretto => "corretto",
             Self::Zulu => "zulu",
             Self::Microsoft => "microsoft",
@@ -43,6 +45,7 @@ impl JdkDistribution {
     pub fn all() -> &'static [Self] {
         &[
             Self::Temurin,
+            Self::OpenJdk,
             Self::Corretto,
             Self::Zulu,
             Self::Microsoft,
@@ -59,6 +62,7 @@ impl fmt::Display for JdkDistribution {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Temurin => write!(f, "temurin"),
+            Self::OpenJdk => write!(f, "openjdk"),
             Self::Corretto => write!(f, "corretto"),
             Self::Zulu => write!(f, "zulu"),
             Self::Microsoft => write!(f, "microsoft"),
@@ -77,6 +81,9 @@ impl FromStr for JdkDistribution {
     fn from_str(s: &str) -> Result<Self> {
         match s.to_ascii_lowercase().as_str() {
             "temurin" | "adoptium" => Ok(Self::Temurin),
+            "openjdk" | "open_jdk" | "open-jdk" | "oracle_open_jdk" | "oracle-openjdk" => {
+                Ok(Self::OpenJdk)
+            }
             "corretto" | "amazon" => Ok(Self::Corretto),
             "zulu" | "azul" => Ok(Self::Zulu),
             "microsoft" | "ms" => Ok(Self::Microsoft),
@@ -86,7 +93,7 @@ impl FromStr for JdkDistribution {
             "oracle" => Ok(Self::Oracle),
             "sapmachine" | "sap" | "sap_machine" => Ok(Self::Sapmachine),
             other => Err(DjukeError::InvalidJdkSpec(format!(
-                "Unknown distribution '{}'. Supported: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine",
+                "Unknown distribution '{}'. Supported: temurin, openjdk, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine",
                 other
             ))),
         }
