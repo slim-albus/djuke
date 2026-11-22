@@ -417,3 +417,47 @@ fn test_template_generation_with_custom_distro_and_latest_java() {
     let build_kts = fs::read_to_string(project_dir.join("build.gradle.kts")).unwrap();
     assert!(build_kts.contains("JavaLanguageVersion.of(23)"));
 }
+
+#[test]
+fn test_gradle_and_maven_wrapper_auto_generation_in_project_without_wrapper() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+
+    // Verify initially no wrapper
+    assert!(!root.join("gradlew").exists());
+    assert!(!root.join("gradlew.bat").exists());
+    assert!(!root.join("mvnw").exists());
+    assert!(!root.join("mvnw.cmd").exists());
+
+    // Auto-generate Gradle wrapper directly from embedded assets
+    djuke_build::create_gradle_wrapper(root, None).unwrap();
+    assert!(root.join("gradlew").exists());
+    assert!(root.join("gradlew.bat").exists());
+    assert!(root
+        .join("gradle")
+        .join("wrapper")
+        .join("gradle-wrapper.jar")
+        .exists());
+    assert!(root
+        .join("gradle")
+        .join("wrapper")
+        .join("gradle-wrapper.properties")
+        .exists());
+
+    // Auto-generate Maven wrapper directly from embedded assets
+    let mvn_dir = tempdir().unwrap();
+    let mvn_root = mvn_dir.path();
+    djuke_build::create_maven_wrapper(mvn_root, None).unwrap();
+    assert!(mvn_root.join("mvnw").exists());
+    assert!(mvn_root.join("mvnw.cmd").exists());
+    assert!(mvn_root
+        .join(".mvn")
+        .join("wrapper")
+        .join("maven-wrapper.jar")
+        .exists());
+    assert!(mvn_root
+        .join(".mvn")
+        .join("wrapper")
+        .join("maven-wrapper.properties")
+        .exists());
+}
