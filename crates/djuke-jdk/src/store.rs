@@ -84,9 +84,13 @@ impl JdkStore {
         let java_bin = DjukePaths::java_executable(dir);
         if java_bin.is_file() {
             let (distro, ver) = if let Some((d, v)) = folder_name.split_once('-') {
-                (d.parse().unwrap_or(JdkDistribution::Temurin), v.to_string())
+                (
+                    d.parse()
+                        .unwrap_or_else(|_| JdkDistribution::default_distro()),
+                    v.to_string(),
+                )
             } else {
-                (JdkDistribution::Temurin, folder_name.to_string())
+                (JdkDistribution::default_distro(), folder_name.to_string())
             };
             let major: u32 = ver
                 .split('.')

@@ -39,7 +39,7 @@ impl JdkDistribution {
     }
 
     pub fn default_distro() -> Self {
-        Self::Temurin
+        Self::OpenJdk
     }
 
     pub fn all() -> &'static [Self] {
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_jdk_spec_parsing() {
         let spec1: JdkSpec = "21".parse().unwrap();
-        assert_eq!(spec1.distribution, JdkDistribution::Temurin);
+        assert_eq!(spec1.distribution, JdkDistribution::OpenJdk);
         assert_eq!(spec1.version, "21");
 
         let spec2: JdkSpec = "corretto@17".parse().unwrap();

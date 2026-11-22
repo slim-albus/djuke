@@ -685,19 +685,124 @@ async fn resolve_project_options(opts: CliProjectOptions) -> Result<ResolvedProj
         }
     };
 
-    // 4. Resolve Java Version (Richer, clearer, more accessible options)
+    // 4. Resolve JDK Distribution / Flavour early
+    let distro = match opts.distro {
+        Some(d) => Some(d),
+        None => {
+            if is_interactive {
+                let distros = [
+                    "OpenJDK (Oracle)      [Default - Official reference openjdk from jdk.java.net]",
+                    "Eclipse Temurin       [Adoptium open-source build, recommended for enterprise]",
+                    "Amazon Corretto       [Production-ready multiplatform distribution from AWS]",
+                    "Azul Zulu             [Certified TCK-tested OpenJDK builds]",
+                    "Microsoft OpenJDK     [Optimized for Azure and general cloud deployments]",
+                    "GraalVM Community     [High-performance runtime with native-image compilation]",
+                    "BellSoft Liberica     [Recommended by Spring Boot, supports full desktop/cloud]",
+                    "Oracle JDK            [Official Oracle commercial/personal distribution]",
+                    "SAP SapMachine        [Enterprise OpenJDK maintained by SAP]",
+                    "IBM Semeru (OpenJ9)   [Low memory footprint JVM powered by Eclipse OpenJ9]",
+                ];
+                let idx = dialoguer::Select::with_theme(&theme)
+                    .with_prompt("Select JDK distribution (flavour)")
+                    .items(&distros)
+                    .default(0)
+                    .interact()
+                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                match idx {
+                    0 => Some(JdkDistribution::OpenJdk),
+                    1 => Some(JdkDistribution::Temurin),
+                    2 => Some(JdkDistribution::Corretto),
+                    3 => Some(JdkDistribution::Zulu),
+                    4 => Some(JdkDistribution::Microsoft),
+                    5 => Some(JdkDistribution::Graalvm),
+                    6 => Some(JdkDistribution::Liberica),
+                    7 => Some(JdkDistribution::Oracle),
+                    8 => Some(JdkDistribution::Sapmachine),
+                    9 => Some(JdkDistribution::Semeru),
+                    _ => Some(JdkDistribution::OpenJdk),
+                }
+            } else {
+                Some(JdkDistribution::default_distro())
+            }
+        }
+    };
+
+    let selected_distro = distro.unwrap_or_else(JdkDistribution::default_distro);
+
+    // 5. Resolve Java Version (with installed-status indicator under chosen flavour)
     let java = match opts.java {
         Some(j) => j,
         None => {
             if is_interactive {
+                let store = djuke_jdk::JdkStore::new(DjukePaths::discover());
+                let installed_jdks = store.list_installed().unwrap_or_default();
+                let is_downloaded = |ver: &str| -> bool {
+                    installed_jdks.iter().any(|i| {
+                        i.distribution == selected_distro
+                            && (i.version == ver
+                                || i.version.starts_with(ver)
+                                || (ver == "8" && i.version.starts_with("1.8")))
+                    })
+                };
+
+                let v21_label = if is_downloaded("21") {
+                    "21 (LTS) [Installed locally ✔] - Recommended: Current production standard"
+                        .to_string()
+                } else {
+                    "21 (LTS)                       - Recommended: Current production standard"
+                        .to_string()
+                };
+                let v25_label = if is_downloaded("25") {
+                    "25 (LTS) [Installed locally ✔] - Modern standard: Next-generation long-term support"
+                        .to_string()
+                } else {
+                    "25 (LTS)                       - Modern standard: Next-generation long-term support"
+                        .to_string()
+                };
+                let v23_label = if is_downloaded("23") {
+                    "23 (GA)  [Installed locally ✔] - Recent feature release: Virtual threads & modern features"
+                        .to_string()
+                } else {
+                    "23 (GA)                        - Recent feature release: Virtual threads & modern features"
+                        .to_string()
+                };
+                let v17_label = if is_downloaded("17") {
+                    "17 (LTS) [Installed locally ✔] - Enterprise LTS: Broad compatibility for established projects"
+                        .to_string()
+                } else {
+                    "17 (LTS)                       - Enterprise LTS: Broad compatibility for established projects"
+                        .to_string()
+                };
+                let v27_label = if is_downloaded("27") {
+                    "27 (EA)  [Installed locally ✔] - Next-Gen / Bleeding edge: Early access language features"
+                        .to_string()
+                } else {
+                    "27 (EA)                        - Next-Gen / Bleeding edge: Early access language features"
+                        .to_string()
+                };
+                let v11_label = if is_downloaded("11") {
+                    "11 (LTS) [Installed locally ✔] - Legacy enterprise: Older enterprise maintenance"
+                        .to_string()
+                } else {
+                    "11 (LTS)                       - Legacy enterprise: Older enterprise maintenance"
+                        .to_string()
+                };
+                let v8_label = if is_downloaded("8") {
+                    "8  (LTS) [Installed locally ✔] - Legacy baseline: Java 1.8 compatibility"
+                        .to_string()
+                } else {
+                    "8  (LTS)                       - Legacy baseline: Java 1.8 compatibility"
+                        .to_string()
+                };
+
                 let versions = [
-                    "21 (LTS) - Recommended: Current production standard, maximum library compatibility",
-                    "25 (LTS) - Modern standard: Next-generation long-term support",
-                    "23 (GA)  - Recent feature release: Virtual threads & modern language features",
-                    "17 (LTS) - Enterprise LTS: Broad compatibility for established projects",
-                    "27 (EA)  - Next-Gen / Bleeding edge: Early access language features",
-                    "11 (LTS) - Legacy enterprise: Older enterprise maintenance",
-                    "8  (LTS) - Legacy baseline: Java 1.8 compatibility",
+                    v21_label.as_str(),
+                    v25_label.as_str(),
+                    v23_label.as_str(),
+                    v17_label.as_str(),
+                    v27_label.as_str(),
+                    v11_label.as_str(),
+                    v8_label.as_str(),
                     "Custom version... (type any version, e.g. 24, 22, 26)",
                 ];
                 let idx = dialoguer::Select::with_theme(&theme)
@@ -727,76 +832,7 @@ async fn resolve_project_options(opts: CliProjectOptions) -> Result<ResolvedProj
         }
     };
 
-    // 5. Resolve Group ID / Package
-    let group = match opts.group {
-        Some(g) if !g.trim().is_empty() => g.trim().to_string(),
-        _ => {
-            let sanitized_name: String = name
-                .chars()
-                .map(|c| {
-                    if c.is_ascii_alphanumeric() {
-                        c.to_ascii_lowercase()
-                    } else {
-                        '_'
-                    }
-                })
-                .collect();
-            let default_group = format!("com.example.{}", sanitized_name);
-            if is_interactive {
-                dialoguer::Input::with_theme(&theme)
-                    .with_prompt("Root package / Group ID")
-                    .default(default_group)
-                    .interact_text()
-                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?
-            } else {
-                "com.example".to_string()
-            }
-        }
-    };
-
-    // 6. Resolve JDK Distribution / Flavour
-    let distro = match opts.distro {
-        Some(d) => Some(d),
-        None => {
-            if is_interactive {
-                let distros = [
-                    "Eclipse Temurin       [Default - Adoptium open-source build, recommended]",
-                    "OpenJDK (Oracle)      [Official reference openjdk from jdk.java.net]",
-                    "Amazon Corretto       [Production-ready multiplatform distribution from AWS]",
-                    "Azul Zulu             [Certified TCK-tested OpenJDK builds]",
-                    "Microsoft OpenJDK     [Optimized for Azure and general cloud deployments]",
-                    "GraalVM Community     [High-performance runtime with native-image compilation]",
-                    "BellSoft Liberica     [Recommended by Spring Boot, supports full desktop/cloud]",
-                    "Oracle JDK            [Official Oracle commercial/personal distribution]",
-                    "SAP SapMachine        [Enterprise OpenJDK maintained by SAP]",
-                    "IBM Semeru (OpenJ9)   [Low memory footprint JVM powered by Eclipse OpenJ9]",
-                ];
-                let idx = dialoguer::Select::with_theme(&theme)
-                    .with_prompt("Select JDK distribution (flavour)")
-                    .items(&distros)
-                    .default(0)
-                    .interact()
-                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
-                match idx {
-                    0 => Some(JdkDistribution::Temurin),
-                    1 => Some(JdkDistribution::OpenJdk),
-                    2 => Some(JdkDistribution::Corretto),
-                    3 => Some(JdkDistribution::Zulu),
-                    4 => Some(JdkDistribution::Microsoft),
-                    5 => Some(JdkDistribution::Graalvm),
-                    6 => Some(JdkDistribution::Liberica),
-                    7 => Some(JdkDistribution::Oracle),
-                    8 => Some(JdkDistribution::Sapmachine),
-                    9 => Some(JdkDistribution::Semeru),
-                    _ => Some(JdkDistribution::Temurin),
-                }
-            } else {
-                Some(JdkDistribution::Temurin)
-            }
-        }
-    };
-
-    // 7. Resolve Testing Framework (let users choose / skip)
+    // 6. Resolve Testing Framework (let users choose / skip)
     let test_framework = match opts.test_framework {
         Some(tf) => tf,
         None => {
@@ -828,54 +864,113 @@ async fn resolve_project_options(opts: CliProjectOptions) -> Result<ResolvedProj
         }
     };
 
-    // 8. Resolve Spring Boot dependencies if applicable (live metadata from start.spring.io)
+    // 7. Resolve Group ID / Package
+    let group = match opts.group {
+        Some(g) if !g.trim().is_empty() => g.trim().to_string(),
+        _ => {
+            let sanitized_name: String = name
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() {
+                        c.to_ascii_lowercase()
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            let default_group = format!("com.example.{}", sanitized_name);
+            if is_interactive {
+                dialoguer::Input::with_theme(&theme)
+                    .with_prompt("Root package / Group ID")
+                    .default(default_group)
+                    .interact_text()
+                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?
+            } else {
+                "com.example".to_string()
+            }
+        }
+    };
+
+    // 8. Resolve Spring Boot dependencies if applicable
     let initializr_deps = if template == djuke_templates::TemplateType::SpringBoot {
         if is_interactive {
-            let client = djuke_templates::SpringInitializrClient::new();
-            let deps = client.fetch_dependencies().await;
-            if deps.is_empty() {
-                Some(vec!["web".into(), "actuator".into()])
+            let popular = djuke_templates::SpringInitializrClient::popular_dependencies();
+            let labels: Vec<String> = popular
+                .iter()
+                .map(|d| {
+                    let desc = d.description.as_deref().unwrap_or("");
+                    format!("{:<15} - {:<24} [{}]", d.id, format!("({})", d.name), desc)
+                })
+                .collect();
+            let default_flags: Vec<bool> = popular
+                .iter()
+                .map(|d| d.id == "web" || d.id == "devtools" || d.id == "actuator")
+                .collect();
+            let chosen_indices = dialoguer::MultiSelect::with_theme(&theme)
+                .with_prompt("Select Spring Boot dependencies (Space to toggle, Enter to confirm)")
+                .items(&labels)
+                .defaults(&default_flags)
+                .interact()
+                .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+
+            let mut selected_ids: Vec<String> = if chosen_indices.is_empty() {
+                vec!["web".into(), "devtools".into(), "actuator".into()]
             } else {
-                let labels: Vec<String> = deps
-                    .iter()
-                    .map(|d| {
-                        let desc = d.description.as_deref().unwrap_or("");
-                        let short_desc = if desc.len() > 40 {
-                            format!("{}...", &desc[..37])
-                        } else {
-                            desc.to_string()
-                        };
-                        format!(
-                            "{:<20} {:<24} [{}]",
-                            d.id,
-                            format!("({})", d.name),
-                            short_desc
+                chosen_indices
+                    .into_iter()
+                    .map(|i| popular[i].id.clone())
+                    .collect()
+            };
+
+            let expand = dialoguer::Confirm::with_theme(&theme)
+                .with_prompt("Browse more dependencies from full Initializr catalog?")
+                .default(false)
+                .interact()
+                .unwrap_or(false);
+
+            if expand {
+                let client = djuke_templates::SpringInitializrClient::new();
+                let all_deps = client.fetch_dependencies().await;
+                let remaining: Vec<_> = all_deps
+                    .into_iter()
+                    .filter(|d| !popular.iter().any(|p| p.id == d.id))
+                    .collect();
+                if !remaining.is_empty() {
+                    let rem_labels: Vec<String> = remaining
+                        .iter()
+                        .map(|d| {
+                            let desc = d.description.as_deref().unwrap_or("");
+                            let short_desc = if desc.len() > 40 {
+                                format!("{}...", &desc[..37])
+                            } else {
+                                desc.to_string()
+                            };
+                            format!(
+                                "{:<15} - {:<24} [{}]",
+                                d.id,
+                                format!("({})", d.name),
+                                short_desc
+                            )
+                        })
+                        .collect();
+                    let default_rem_flags = vec![false; remaining.len()];
+                    let rem_chosen = dialoguer::MultiSelect::with_theme(&theme)
+                        .with_prompt(
+                            "Select additional dependencies (Space to toggle, Enter to confirm)",
                         )
-                    })
-                    .collect();
-                let default_flags: Vec<bool> = deps
-                    .iter()
-                    .map(|d| d.id == "web" || d.id == "actuator")
-                    .collect();
-                let chosen_indices = dialoguer::MultiSelect::with_theme(&theme)
-                    .with_prompt("Select Spring Boot starter dependencies (Space to toggle, Enter to confirm)")
-                    .items(&labels)
-                    .defaults(&default_flags)
-                    .interact()
-                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
-                if chosen_indices.is_empty() {
-                    Some(vec!["web".into(), "actuator".into()])
-                } else {
-                    Some(
-                        chosen_indices
-                            .into_iter()
-                            .map(|i| deps[i].id.clone())
-                            .collect(),
-                    )
+                        .items(&rem_labels)
+                        .defaults(&default_rem_flags)
+                        .interact()
+                        .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                    for idx in rem_chosen {
+                        selected_ids.push(remaining[idx].id.clone());
+                    }
                 }
             }
+
+            Some(selected_ids)
         } else {
-            Some(vec!["web".into(), "actuator".into()])
+            Some(vec!["web".into(), "devtools".into(), "actuator".into()])
         }
     } else {
         None
@@ -922,10 +1017,10 @@ async fn handle_use_command(
                 if installed.is_empty() {
                     println!("{}", "No JDKs currently installed locally.".yellow().bold());
                     let install_options = [
-                        "Download & install Eclipse Temurin 21 (LTS) [Recommended production standard]",
+                        "Download & install OpenJDK (Oracle) 21 [Default - Official reference openjdk build]",
+                        "Download & install Eclipse Temurin 21 (LTS) [Adoptium production standard]",
                         "Download & install Eclipse Temurin 25 (LTS) [Next-gen long-term support]",
                         "Download & install Eclipse Temurin 17 (LTS) [Enterprise legacy LTS]",
-                        "Download & install OpenJDK (Oracle) 21 [Official reference build]",
                         "Custom version & distribution...",
                     ];
                     let idx = dialoguer::Select::with_theme(&theme)
@@ -936,10 +1031,10 @@ async fn handle_use_command(
                         .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
 
                     match idx {
-                        0 => ("21".to_string(), Some(JdkDistribution::Temurin)),
-                        1 => ("25".to_string(), Some(JdkDistribution::Temurin)),
-                        2 => ("17".to_string(), Some(JdkDistribution::Temurin)),
-                        3 => ("21".to_string(), Some(JdkDistribution::OpenJdk)),
+                        0 => ("21".to_string(), Some(JdkDistribution::OpenJdk)),
+                        1 => ("21".to_string(), Some(JdkDistribution::Temurin)),
+                        2 => ("25".to_string(), Some(JdkDistribution::Temurin)),
+                        3 => ("17".to_string(), Some(JdkDistribution::Temurin)),
                         4 => {
                             let ver: String = dialoguer::Input::with_theme(&theme)
                                 .with_prompt("Target Java version (e.g. 21, 23, 25)")
@@ -948,9 +1043,9 @@ async fn handle_use_command(
                                 .map_err(|e| {
                                     DjukeError::Process(format!("Prompt failed: {}", e))
                                 })?;
-                            (ver, distro.or(Some(JdkDistribution::Temurin)))
+                            (ver, distro.or(Some(JdkDistribution::default_distro())))
                         }
-                        _ => ("21".to_string(), Some(JdkDistribution::Temurin)),
+                        _ => ("21".to_string(), Some(JdkDistribution::default_distro())),
                     }
                 } else {
                     let mut items: Vec<String> = installed
@@ -988,7 +1083,7 @@ async fn handle_use_command(
                             .default("21".to_string())
                             .interact_text()
                             .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
-                        (ver, distro.or(Some(JdkDistribution::Temurin)))
+                        (ver, distro.or(Some(JdkDistribution::default_distro())))
                     }
                 }
             } else if !installed.is_empty() {
@@ -1680,7 +1775,7 @@ async fn main() -> Result<()> {
                 if remote {
                     let disco = DiscoClient::new();
                     let platform = Platform::current();
-                    let query_distro = distro.unwrap_or(JdkDistribution::Temurin);
+                    let query_distro = distro.unwrap_or_else(JdkDistribution::default_distro);
 
                     println!(
                         "{}",
