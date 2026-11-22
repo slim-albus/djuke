@@ -155,25 +155,37 @@ Every command implementation in `djuke` MUST strictly obey the following four in
 - **Signature**: `djuke new [name] [-t|--template <type>] [-b|--build-tool <tool>] [--group <group>] [--java <version>] [-d|--distro <distro>] [-y|--yes]`
 - **Situational Behavior**:
   - **Situation A (Interactive Terminal - no `-y`)**:
-    - Prompts for Project Name (default: `my-app`).
+    - Prompts for Project Name (default: `my-app` or current directory name).
     - Prompts for Template Selection:
-      1. CLI Application (minimal console app)
-      2. Library (reusable Java library)
-      3. Spring Boot Web API (REST controller, Actuator, Jackson)
-      4. Quarkus REST API (high-performance reactive microservice)
-      5. Micronaut Microservice (cloud-native modular app)
+      1. CLI Application (minimal console app with Main class - Java 8 to 27+)
+      2. Library (reusable Java library with JUnit 5 test suite - Java 8 to 27+)
+      3. Spring Boot Web API (enterprise web application with Spring Boot 3.4 & Actuator - Java 17 to 25)
+      4. Quarkus REST API (high-performance reactive microservice - Java 17 to 23)
+      5. Micronaut Microservice (cloud-native modular app - Java 17 to 23)
     - Prompts for Build Tool:
-      1. Gradle Kotlin DSL (`build.gradle.kts`) [Recommended]
-      2. Gradle Groovy DSL (`build.gradle`)
-      3. Maven (`pom.xml`)
-    - Prompts for Target Java Version (21 LTS [Recommended], 17 LTS, 23 Latest, 25 LTS, or Custom).
-    - Prompts for JDK Distribution Flavour (Temurin, OpenJDK, Corretto, Zulu, Microsoft, GraalVM, Liberica, Oracle, SapMachine, Semeru).
+      1. Gradle Kotlin DSL (`build.gradle.kts`) [Latest Gradle 9.9 - Recommended]
+      2. Gradle Groovy DSL (`build.gradle`) [Latest Gradle 9.9 - Classic syntax]
+      3. Maven (`pom.xml`) [Latest Maven 3.9 - Standard XML]
+    - Prompts for Target Java Version (Highly Accessible Selection):
+      1. 21 (LTS) - Recommended: Current production standard, maximum library compatibility
+      2. 25 (LTS) - Modern standard: Next-generation long-term support
+      3. 23 (GA)  - Recent feature release: Virtual threads & modern language features
+      4. 17 (LTS) - Enterprise LTS: Broad compatibility for established projects
+      5. 27 (EA)  - Next-Gen / Bleeding edge: Early access language features
+      6. 11 (LTS) - Legacy enterprise: Older enterprise maintenance
+      7. 8  (LTS) - Legacy baseline: Java 1.8 compatibility
+      8. Custom version... (type any version, e.g. 24, 22, 26)
+    - Prompts for Root Package / Group ID (default: `com.example.<project_name>`).
+    - Prompts for JDK Distribution Flavour (Temurin [Default], OpenJDK, Corretto, Zulu, Microsoft, GraalVM, Liberica, Oracle, SapMachine, Semeru).
   - **Situation B (Non-interactive / CI `-y`)**:
     - Uses CLI arguments or defaults: name `my-app`, template `cli`, build tool `gradle-kts`, Java 21, Temurin.
   - **Situation C (Destination Directory Exists & Non-Empty)**:
     - Aborts immediately with error: `"Target directory '<dest>' already exists and is not empty"`. Never overwrites.
-  - **Situation D (Wrapper Creation Guarantee)**:
-    - MUST write complete, self-bootstrapping wrapper files (`gradlew`, `gradlew.bat`, `gradle/wrapper/*` or `mvnw`, `mvnw.cmd`, `.mvn/wrapper/*`) from embedded assets in <5ms.
+  - **Situation D (Wrapper & Tool Configuration Guarantee)**:
+    - Automatically bootstraps the latest compatible build tool wrapper from embedded assets in <5ms:
+      - Gradle: latest `9.9.2` for Java 17-27+ (or `8.14.8` for legacy Java 8-16).
+      - Maven: latest `3.9.16`.
+    - Automatically writes `gradle.properties` configuring parallel builds, caching, and `--enable-native-access=ALL-UNNAMED` for modern Java runtimes.
     - MUST write `djuke.toml` with project configuration.
 - **Exit Codes**: `0` on success, `1` on validation or IO failure.
 

@@ -38,11 +38,15 @@ pub async fn execute_task(exec: TaskExecution<'_>) -> Result<ExitStatus> {
 
     if !has_wrapper {
         eprintln!(
-            "No {} wrapper found in project. Auto-generating wrapper...",
+            "No {} wrapper found in project. Auto-generating compatible wrapper...",
             exec.tool
         );
         match exec.tool {
-            BuildTool::Gradle => create_gradle_wrapper(exec.project_root, None)?,
+            BuildTool::Gradle => {
+                let java_ver = infer_java_version_from_path(exec.java_home);
+                let g_ver = crate::bootstrap::compatible_gradle_version_for_java(&java_ver);
+                create_gradle_wrapper(exec.project_root, Some(g_ver))?;
+            }
             BuildTool::Maven => create_maven_wrapper(exec.project_root, None)?,
         }
     }
@@ -71,4 +75,15 @@ pub async fn execute_task(exec: TaskExecution<'_>) -> Result<ExitStatus> {
     };
 
     ProcessRunner::run_command(&program_str, &cmd_args, &ctx).await
+}
+
+fn infer_java_version_from_path(path: &Path) -> String {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    for part in name.split(['-', '_', '@']) {
+        let digit_prefix: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !digit_prefix.is_empty() {
+            return digit_prefix;
+        }
+    }
+    "21".to_string()
 }

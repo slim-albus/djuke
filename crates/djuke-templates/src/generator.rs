@@ -371,7 +371,7 @@ application {{
         ),
         TemplateType::SpringBoot => (
             r#"    java
-    id("org.springframework.boot") version "3.3.4"
+    id("org.springframework.boot") version "3.4.0"
     id("io.spring.dependency-management") version "1.1.6""#,
             r#"    implementation("org.springframework.boot:spring-boot-starter-web")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
@@ -428,6 +428,19 @@ tasks.named<Test>("test") {{
     );
 
     fs::write(dest.join("build.gradle.kts"), build)?;
+
+    let j_num = j_ver.parse::<u32>().unwrap_or(21);
+    let jvmargs = if j_num >= 24 {
+        "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED"
+    } else {
+        "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8"
+    };
+    let props = format!(
+        "{}\norg.gradle.parallel=true\norg.gradle.caching=true\n",
+        jvmargs
+    );
+    let _ = fs::write(dest.join("gradle.properties"), props);
+
     Ok(())
 }
 
@@ -473,6 +486,19 @@ test {{
     );
 
     fs::write(dest.join("build.gradle"), build)?;
+
+    let j_num = j_ver.parse::<u32>().unwrap_or(21);
+    let jvmargs = if j_num >= 24 {
+        "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED"
+    } else {
+        "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8"
+    };
+    let props = format!(
+        "{}\norg.gradle.parallel=true\norg.gradle.caching=true\n",
+        jvmargs
+    );
+    let _ = fs::write(dest.join("gradle.properties"), props);
+
     Ok(())
 }
 
@@ -490,7 +516,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.4</version>
+        <version>3.4.0</version>
         <relativePath/>
     </parent>
 
@@ -638,6 +664,31 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
             )
         }
         _ => {
+            let extra_plugin = if opts.template == TemplateType::Cli {
+                format!(
+                    r#"            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>{}.App</mainClass>
+                </configuration>
+            </plugin>"#,
+                    opts.group_id
+                )
+            } else {
+                String::new()
+            };
+
+            let compiler_prop = if j_ver == "8" || j_ver == "1.8" {
+                "        <maven.compiler.source>8</maven.compiler.source>\n        <maven.compiler.target>8</maven.compiler.target>".to_string()
+            } else {
+                format!(
+                    "        <maven.compiler.release>{}</maven.compiler.release>",
+                    j_ver
+                )
+            };
+
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -650,9 +701,9 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     <version>0.1.0-SNAPSHOT</version>
 
     <properties>
-        <maven.compiler.source>{}</maven.compiler.source>
-        <maven.compiler.target>{}</maven.compiler.target>
+{}
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <junit.version>5.10.2</junit.version>
     </properties>
 
@@ -669,14 +720,20 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.0</version>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
+{}
         </plugins>
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, j_ver, j_ver
+                opts.group_id, opts.name, compiler_prop, extra_plugin
             )
         }
     };
@@ -707,6 +764,7 @@ mod tests {
 
         assert!(dir.path().join("build.gradle.kts").is_file());
         assert!(dir.path().join("settings.gradle.kts").is_file());
+        assert!(dir.path().join("gradle.properties").is_file());
         assert!(dir.path().join("djuke.toml").is_file());
         assert!(dir
             .path()
@@ -716,6 +774,28 @@ mod tests {
             .path()
             .join("src/test/java/com/example/test/AppTest.java")
             .is_file());
+    }
+
+    #[test]
+    fn test_generate_java_27_cli_gradle() {
+        let dir = tempdir().unwrap();
+        let opts = NewProjectOptions {
+            name: "modern-27-app".into(),
+            group_id: "com.example.modern".into(),
+            template: TemplateType::Cli,
+            build_tool: BuildToolChoice::GradleKts,
+            java_version: "27".into(),
+            distribution: None,
+            destination: dir.path().to_path_buf(),
+        };
+
+        generate_project(&opts).unwrap();
+
+        let kts = fs::read_to_string(dir.path().join("build.gradle.kts")).unwrap();
+        assert!(kts.contains("JavaLanguageVersion.of(27)"));
+
+        let props = fs::read_to_string(dir.path().join("gradle.properties")).unwrap();
+        assert!(props.contains("--enable-native-access=ALL-UNNAMED"));
     }
 
     #[test]
