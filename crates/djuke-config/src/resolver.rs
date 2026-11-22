@@ -25,6 +25,15 @@ pub fn resolve_project_config(
     cli_java_override: Option<&str>,
     paths: &DjukePaths,
 ) -> ResolvedProjectConfig {
+    resolve_project_config_with_tool(start_dir, cli_java_override, None, paths)
+}
+
+pub fn resolve_project_config_with_tool(
+    start_dir: &Path,
+    cli_java_override: Option<&str>,
+    cli_tool_override: Option<BuildTool>,
+    paths: &DjukePaths,
+) -> ResolvedProjectConfig {
     let global_config = load_global_config(&paths.config_file()).unwrap_or_default();
     let markers = detect_project_markers(start_dir);
     let manifest_path = find_manifest_file(&markers.root);
@@ -70,10 +79,8 @@ pub fn resolve_project_config(
     let jdk_spec = JdkSpec::new(distro, version);
 
     // 2. Resolve Build Tool
-    let build_tool = manifest
-        .build
-        .as_ref()
-        .and_then(|b| b.tool)
+    let build_tool = cli_tool_override
+        .or_else(|| manifest.build.as_ref().and_then(|b| b.tool))
         .or(markers.build_tool);
 
     // 3. Resolve Tasks

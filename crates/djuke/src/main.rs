@@ -5,10 +5,10 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use djuke_build::{execute_task, TaskExecution};
-use djuke_config::{load_manifest, resolve_project_config};
+use djuke_config::{load_manifest, resolve_project_config, resolve_project_config_with_tool};
 use djuke_core::{BuildTool, DjukeError, JdkDistribution, JdkSpec, ProjectManifest};
 use djuke_doctor::run_doctor_checks;
-use djuke_jdk::{install_jdk, resolve_jdk, DiscoClient, JdkStore};
+use djuke_jdk::{disco::DiscoMajorVersion, install_jdk, resolve_jdk, DiscoClient, JdkStore};
 use djuke_platform::{DjukePaths, Platform};
 use djuke_process::{CommandContext, ProcessRunner};
 
@@ -63,8 +63,8 @@ enum Commands {
         template: String,
 
         #[arg(
-            short,
-            long,
+            short = 'b',
+            long = "build-tool",
             default_value = "gradle-kts",
             help = "Build tool: gradle-kts, gradle-groovy, maven"
         )]
@@ -73,8 +73,19 @@ enum Commands {
         #[arg(long, default_value = "com.example", help = "Root package / group ID")]
         group: String,
 
-        #[arg(long, default_value = "21", help = "Target Java version")]
+        #[arg(
+            long,
+            default_value = "21",
+            help = "Target Java version (number, 'latest', or 'lts')"
+        )]
         java: String,
+
+        #[arg(
+            short = 'd',
+            long = "distro",
+            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+        )]
+        distro: Option<JdkDistribution>,
     },
 
     #[command(about = "Initialize a new Java project in the current directory")]
@@ -95,8 +106,8 @@ enum Commands {
         template: String,
 
         #[arg(
-            short,
-            long,
+            short = 'b',
+            long = "build-tool",
             default_value = "gradle-kts",
             help = "Build tool: gradle-kts, gradle-groovy, maven"
         )]
@@ -105,8 +116,19 @@ enum Commands {
         #[arg(long, default_value = "com.example", help = "Root package / group ID")]
         group: String,
 
-        #[arg(long, default_value = "21", help = "Target Java version")]
+        #[arg(
+            long,
+            default_value = "21",
+            help = "Target Java version (number, 'latest', or 'lts')"
+        )]
         java: String,
+
+        #[arg(
+            short = 'd',
+            long = "distro",
+            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+        )]
+        distro: Option<JdkDistribution>,
     },
 
     #[command(about = "Add a dependency to the current project (Maven or Gradle)")]
@@ -147,31 +169,33 @@ enum Commands {
     Cache(CacheArgs),
 
     #[command(about = "Prepare project dependencies, JDK, and build tool wrappers")]
-    Setup,
+    Setup {
+        #[arg(
+            short = 't',
+            long = "tool",
+            help = "Explicitly specify build tool: gradle or maven"
+        )]
+        tool: Option<BuildTool>,
+
+        #[arg(
+            short = 'd',
+            long = "distro",
+            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+        )]
+        distro: Option<JdkDistribution>,
+    },
 
     #[command(about = "Execute the project build task")]
-    Build {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Build(BuildTaskArgs),
 
     #[command(about = "Execute the project test task")]
-    Test {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Test(BuildTaskArgs),
 
     #[command(about = "Execute project application or single Java source file")]
-    Run {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Run(RunTaskArgs),
 
     #[command(about = "Start the project application in development/live-reload mode")]
-    Dev {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Dev(BuildTaskArgs),
 
     #[command(about = "Display a visual tree of project dependencies")]
     Tree,
@@ -183,10 +207,7 @@ enum Commands {
     Audit,
 
     #[command(about = "Execute the project clean task")]
-    Clean {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Clean(BuildTaskArgs),
 
     #[command(about = "Execute an arbitrary command with project Java environment injected")]
     Exec {
@@ -209,11 +230,148 @@ enum Commands {
         shell: clap_complete::Shell,
     },
 
-    #[command(about = "Gradle build tool commands")]
+    #[command(about = "Gradle build tool commands and direct execution")]
     Gradle(GradleArgs),
 
-    #[command(about = "Maven build tool commands")]
+    #[command(about = "Maven build tool commands and direct execution")]
     Maven(MavenArgs),
+
+    #[command(external_subcommand)]
+    External(Vec<String>),
+}
+
+#[derive(Args, Debug, Clone)]
+struct BuildTaskArgs {
+    #[arg(
+        short = 't',
+        long = "tool",
+        help = "Explicitly specify build tool: gradle or maven"
+    )]
+    tool: Option<BuildTool>,
+
+    #[arg(
+        long,
+        help = "Run in offline mode without network dependency resolution"
+    )]
+    offline: bool,
+
+    #[arg(
+        short = 'U',
+        long = "refresh",
+        help = "Refresh dynamic dependencies and snapshot releases"
+    )]
+    refresh: bool,
+
+    #[arg(
+        short = 'P',
+        help = "Pass project property (Gradle: -Pprop=val) or activate profile (Maven: -Pprofile)"
+    )]
+    profile: Vec<String>,
+
+    #[arg(short = 'D', help = "Pass system property (e.g. -DskipTests)")]
+    define: Vec<String>,
+
+    #[arg(long, help = "Execute tasks in parallel")]
+    parallel: bool,
+
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<String>,
+}
+
+impl BuildTaskArgs {
+    fn into_tool_args(self, tool: BuildTool) -> Vec<String> {
+        let mut res = Vec::new();
+        if self.offline {
+            match tool {
+                BuildTool::Gradle => res.push("--offline".into()),
+                BuildTool::Maven => res.push("-o".into()),
+            }
+        }
+        if self.refresh {
+            match tool {
+                BuildTool::Gradle => res.push("--refresh-dependencies".into()),
+                BuildTool::Maven => res.push("-U".into()),
+            }
+        }
+        if self.parallel {
+            match tool {
+                BuildTool::Gradle => res.push("--parallel".into()),
+                BuildTool::Maven => {
+                    res.push("-T".into());
+                    res.push("1C".into());
+                }
+            }
+        }
+        for p in self.profile {
+            res.push(format!("-P{}", p));
+        }
+        for d in self.define {
+            res.push(format!("-D{}", d));
+        }
+        res.extend(self.args);
+        res
+    }
+}
+
+#[derive(Args, Debug, Clone)]
+struct RunTaskArgs {
+    #[arg(
+        short = 't',
+        long = "tool",
+        help = "Explicitly specify build tool: gradle or maven"
+    )]
+    tool: Option<BuildTool>,
+
+    #[arg(
+        long,
+        help = "Run in offline mode without network dependency resolution"
+    )]
+    offline: bool,
+
+    #[arg(
+        short = 'U',
+        long = "refresh",
+        help = "Refresh dynamic dependencies and snapshot releases"
+    )]
+    refresh: bool,
+
+    #[arg(
+        short = 'P',
+        help = "Pass project property (Gradle: -Pprop=val) or activate profile (Maven: -Pprofile)"
+    )]
+    profile: Vec<String>,
+
+    #[arg(short = 'D', help = "Pass system property (e.g. -Dserver.port=8080)")]
+    define: Vec<String>,
+
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<String>,
+}
+
+impl RunTaskArgs {
+    fn into_tool_args(self, tool: BuildTool) -> Vec<String> {
+        let mut res = Vec::new();
+        if self.offline {
+            match tool {
+                BuildTool::Gradle => res.push("--offline".into()),
+                BuildTool::Maven => res.push("-o".into()),
+            }
+        }
+        if self.refresh {
+            match tool {
+                BuildTool::Gradle => res.push("--refresh-dependencies".into()),
+                BuildTool::Maven => res.push("-U".into()),
+            }
+        }
+        for p in self.profile {
+            res.push(format!("-P{}", p));
+        }
+        for d in self.define {
+            res.push(format!("-D{}", d));
+        }
+        res.extend(self.args);
+        res
+    }
 }
 
 #[derive(Args)]
@@ -237,7 +395,10 @@ enum CacheSubcommands {
 #[derive(Args)]
 struct GradleArgs {
     #[command(subcommand)]
-    command: GradleSubcommands,
+    command: Option<GradleSubcommands>,
+
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -247,12 +408,21 @@ enum GradleSubcommands {
         #[arg(long, help = "Gradle version to generate (default: 8.10.2)")]
         version: Option<String>,
     },
+
+    #[command(about = "Stop running Gradle daemons")]
+    Stop,
+
+    #[command(about = "Show status of running Gradle daemons")]
+    Status,
 }
 
 #[derive(Args)]
 struct MavenArgs {
     #[command(subcommand)]
-    command: MavenSubcommands,
+    command: Option<MavenSubcommands>,
+
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -279,18 +449,42 @@ enum JavaSubcommands {
 
         #[arg(long, help = "Filter remote query for LTS versions only")]
         lts: bool,
+
+        #[arg(
+            short,
+            long,
+            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+        )]
+        distro: Option<JdkDistribution>,
     },
 
-    #[command(about = "Install a JDK (e.g. '21', 'temurin@21', 'corretto@17')")]
+    #[command(about = "Install a JDK (e.g. '21', 'latest', 'temurin@21', 'corretto@latest')")]
     Install {
-        #[arg(help = "JDK specification e.g. '21' or 'temurin@21'")]
+        #[arg(
+            default_value = "latest",
+            help = "JDK specification e.g. '21', 'latest', 'lts', 'corretto@21'"
+        )]
         spec: String,
+
+        #[arg(
+            short,
+            long,
+            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+        )]
+        distro: Option<JdkDistribution>,
     },
 
     #[command(about = "Set the active Java version for project or globally")]
     Use {
-        #[arg(help = "JDK specification e.g. '21' or 'temurin@21'")]
+        #[arg(help = "JDK specification e.g. '21', 'latest', 'temurin@21'")]
         spec: String,
+
+        #[arg(
+            short,
+            long,
+            help = "JDK distribution: temurin, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
+        )]
+        distro: Option<JdkDistribution>,
 
         #[arg(
             long,
@@ -340,6 +534,7 @@ async fn main() -> Result<()> {
             build_tool,
             group,
             java,
+            distro,
         } => {
             let dest = current_dir.join(&name);
             if dest.exists()
@@ -371,6 +566,7 @@ async fn main() -> Result<()> {
                 template: t_type,
                 build_tool: b_tool,
                 java_version: java,
+                distribution: distro,
                 destination: dest.clone(),
             };
 
@@ -389,6 +585,7 @@ async fn main() -> Result<()> {
             build_tool,
             group,
             java,
+            distro,
         } => {
             let project_name = name.unwrap_or_else(|| {
                 current_dir
@@ -417,6 +614,7 @@ async fn main() -> Result<()> {
                 template: t_type,
                 build_tool: b_tool,
                 java_version: java,
+                distribution: distro,
                 destination: current_dir.clone(),
             };
 
@@ -605,37 +803,56 @@ async fn main() -> Result<()> {
         }
 
         Commands::Java(java_args) => match java_args.command {
-            JavaSubcommands::List { remote, lts } => {
+            JavaSubcommands::List {
+                remote,
+                lts,
+                distro,
+            } => {
                 let store = JdkStore::new(paths.clone());
                 if remote {
                     let disco = DiscoClient::new();
                     let platform = Platform::current();
-                    let target_versions = if lts {
-                        vec!["21", "17", "11", "8"]
-                    } else {
-                        vec!["23", "22", "21", "17", "11"]
-                    };
+                    let query_distro = distro.unwrap_or(JdkDistribution::Temurin);
 
                     println!(
                         "{}",
-                        format!("Available remote JDKs for {} (Foojay Disco API):", platform)
-                            .bold()
-                            .cyan()
+                        format!(
+                            "Available remote JDKs for {} ({}) via Foojay Disco API:",
+                            platform, query_distro
+                        )
+                        .bold()
+                        .cyan()
                     );
                     println!(
                         "{}",
                         "--------------------------------------------------------".cyan()
                     );
 
-                    for ver in target_versions {
-                        if let Ok(packages) = disco
-                            .query_packages(ver, JdkDistribution::Temurin, platform)
-                            .await
+                    let major_versions = disco.fetch_major_versions().await.unwrap_or_default();
+                    let mut candidates: Vec<DiscoMajorVersion> = major_versions
+                        .into_iter()
+                        .filter(|v| {
+                            v.release_status.as_deref() == Some("ga")
+                                && !v.early_access_only.unwrap_or(false)
+                                && (!lts || v.term_of_support.as_deref() == Some("LTS"))
+                        })
+                        .collect();
+                    candidates.sort_by_key(|a| std::cmp::Reverse(a.major_version));
+
+                    for mv in candidates.into_iter().take(10) {
+                        let ver_str = mv.major_version.to_string();
+                        if let Ok(packages) =
+                            disco.query_packages(&ver_str, query_distro, platform).await
                         {
-                            for pkg in packages.into_iter().take(2) {
-                                let distro = pkg.distribution.unwrap_or_else(|| "temurin".into());
-                                let java_ver = pkg.java_version.unwrap_or_else(|| ver.to_string());
-                                println!("  {}@{}", distro.green(), java_ver);
+                            if let Some(pkg) = packages.into_iter().next() {
+                                let java_ver = pkg.java_version.unwrap_or_else(|| ver_str.clone());
+                                let support = mv.term_of_support.as_deref().unwrap_or("STS");
+                                println!(
+                                    "  {}@{} ({})",
+                                    query_distro.to_string().green(),
+                                    java_ver.bold(),
+                                    support.yellow()
+                                );
                             }
                         }
                     }
@@ -671,8 +888,11 @@ async fn main() -> Result<()> {
                 }
             }
 
-            JavaSubcommands::Install { spec } => {
-                let parsed_spec: JdkSpec = spec.parse()?;
+            JavaSubcommands::Install { spec, distro } => {
+                let mut parsed_spec: JdkSpec = spec.parse()?;
+                if let Some(d) = distro {
+                    parsed_spec.distribution = d;
+                }
                 let installed = install_jdk(&parsed_spec, &paths, cli.quiet).await?;
                 if cli.json {
                     println!(
@@ -683,8 +903,15 @@ async fn main() -> Result<()> {
                 }
             }
 
-            JavaSubcommands::Use { spec, global } => {
-                let parsed_spec: JdkSpec = spec.parse()?;
+            JavaSubcommands::Use {
+                spec,
+                distro,
+                global,
+            } => {
+                let mut parsed_spec: JdkSpec = spec.parse()?;
+                if let Some(d) = distro {
+                    parsed_spec.distribution = d;
+                }
                 let installed = resolve_jdk(&parsed_spec, &paths, true, cli.quiet).await?;
 
                 if global {
@@ -758,8 +985,11 @@ async fn main() -> Result<()> {
             }
         },
 
-        Commands::Setup => {
-            let config = resolve_project_config(&current_dir, None, &paths);
+        Commands::Setup { tool, distro } => {
+            let mut config = resolve_project_config_with_tool(&current_dir, None, tool, &paths);
+            if let Some(d) = distro {
+                config.jdk_spec.distribution = d;
+            }
             println!("{}", "🚀 Running djuke setup...".bold().cyan());
 
             // 1. Ensure JDK installed
@@ -773,14 +1003,14 @@ async fn main() -> Result<()> {
 
             // 3. Auto-bootstrap wrapper if missing
             let mut wrapper_status = "present";
-            if let Some(tool) = config.build_tool {
+            if let Some(t) = config.build_tool {
                 let has_wrapper = config.has_gradle_wrapper || config.has_maven_wrapper;
                 if !has_wrapper {
                     if !cli.quiet {
-                        println!("No wrapper detected. Bootstrapping {} wrapper...", tool);
+                        println!("No wrapper detected. Bootstrapping {} wrapper...", t);
                     }
                     if let Err(e) = djuke_build::bootstrap_wrapper(
-                        tool,
+                        t,
                         None,
                         &config.project_root,
                         &installed_jdk.java_home,
@@ -813,8 +1043,13 @@ async fn main() -> Result<()> {
         }
 
         Commands::Gradle(gradle_args) => match gradle_args.command {
-            GradleSubcommands::Wrapper { version } => {
-                let config = resolve_project_config(&current_dir, None, &paths);
+            Some(GradleSubcommands::Wrapper { version }) => {
+                let config = resolve_project_config_with_tool(
+                    &current_dir,
+                    None,
+                    Some(BuildTool::Gradle),
+                    &paths,
+                );
                 let installed_jdk = resolve_jdk(&config.jdk_spec, &paths, true, cli.quiet).await?;
                 djuke_build::bootstrap_wrapper(
                     BuildTool::Gradle,
@@ -826,11 +1061,57 @@ async fn main() -> Result<()> {
                 )
                 .await?;
             }
+            Some(GradleSubcommands::Stop) => {
+                run_raw_tool(
+                    BuildTool::Gradle,
+                    &["--stop".into()],
+                    &current_dir,
+                    &paths,
+                    cli.quiet,
+                )
+                .await?;
+            }
+            Some(GradleSubcommands::Status) => {
+                run_raw_tool(
+                    BuildTool::Gradle,
+                    &["--status".into()],
+                    &current_dir,
+                    &paths,
+                    cli.quiet,
+                )
+                .await?;
+            }
+            None => {
+                if gradle_args.args.is_empty() {
+                    run_raw_tool(
+                        BuildTool::Gradle,
+                        &["--help".into()],
+                        &current_dir,
+                        &paths,
+                        cli.quiet,
+                    )
+                    .await?;
+                } else {
+                    run_raw_tool(
+                        BuildTool::Gradle,
+                        &gradle_args.args,
+                        &current_dir,
+                        &paths,
+                        cli.quiet,
+                    )
+                    .await?;
+                }
+            }
         },
 
         Commands::Maven(maven_args) => match maven_args.command {
-            MavenSubcommands::Wrapper { version } => {
-                let config = resolve_project_config(&current_dir, None, &paths);
+            Some(MavenSubcommands::Wrapper { version }) => {
+                let config = resolve_project_config_with_tool(
+                    &current_dir,
+                    None,
+                    Some(BuildTool::Maven),
+                    &paths,
+                );
                 let installed_jdk = resolve_jdk(&config.jdk_spec, &paths, true, cli.quiet).await?;
                 djuke_build::bootstrap_wrapper(
                     BuildTool::Maven,
@@ -842,28 +1123,80 @@ async fn main() -> Result<()> {
                 )
                 .await?;
             }
+            None => {
+                if maven_args.args.is_empty() {
+                    run_raw_tool(
+                        BuildTool::Maven,
+                        &["--version".into()],
+                        &current_dir,
+                        &paths,
+                        cli.quiet,
+                    )
+                    .await?;
+                } else {
+                    run_raw_tool(
+                        BuildTool::Maven,
+                        &maven_args.args,
+                        &current_dir,
+                        &paths,
+                        cli.quiet,
+                    )
+                    .await?;
+                }
+            }
         },
 
-        Commands::Build { args } => {
-            run_task("build", args, &current_dir, &paths, cli.quiet).await?;
+        Commands::Build(build_args) => {
+            let tool =
+                resolve_project_config_with_tool(&current_dir, None, build_args.tool, &paths)
+                    .build_tool
+                    .unwrap_or(BuildTool::Gradle);
+            let tool_args = build_args.clone().into_tool_args(tool);
+            run_task(
+                "build",
+                tool_args,
+                &current_dir,
+                &paths,
+                cli.quiet,
+                build_args.tool,
+            )
+            .await?;
         }
 
-        Commands::Test { args } => {
-            run_task("test", args, &current_dir, &paths, cli.quiet).await?;
+        Commands::Test(test_args) => {
+            let tool = resolve_project_config_with_tool(&current_dir, None, test_args.tool, &paths)
+                .build_tool
+                .unwrap_or(BuildTool::Gradle);
+            let tool_args = test_args.clone().into_tool_args(tool);
+            run_task(
+                "test",
+                tool_args,
+                &current_dir,
+                &paths,
+                cli.quiet,
+                test_args.tool,
+            )
+            .await?;
         }
 
-        Commands::Run { args } => {
+        Commands::Run(run_args) => {
             // Check if first argument is a single .java source file (JEP 330 launcher)
-            if let Some(first_arg) = args.first() {
+            if let Some(first_arg) = run_args.args.first() {
                 if first_arg.ends_with(".java") {
                     let file_path = PathBuf::from(first_arg);
                     if file_path.is_file() {
-                        let config = resolve_project_config(&current_dir, None, &paths);
+                        let config = resolve_project_config_with_tool(
+                            &current_dir,
+                            None,
+                            run_args.tool,
+                            &paths,
+                        );
                         let installed_jdk =
                             resolve_jdk(&config.jdk_spec, &paths, true, cli.quiet).await?;
                         let java_bin = DjukePaths::java_executable(&installed_jdk.java_home);
                         let bin_str = java_bin.to_string_lossy();
-                        let arg_slices: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                        let arg_slices: Vec<&str> =
+                            run_args.args.iter().map(|s| s.as_str()).collect();
                         let ctx = CommandContext {
                             java_home: installed_jdk.java_home,
                             working_dir: current_dir.clone(),
@@ -879,11 +1212,35 @@ async fn main() -> Result<()> {
                 }
             }
 
-            run_task("run", args, &current_dir, &paths, cli.quiet).await?;
+            let tool = resolve_project_config_with_tool(&current_dir, None, run_args.tool, &paths)
+                .build_tool
+                .unwrap_or(BuildTool::Gradle);
+            let tool_args = run_args.clone().into_tool_args(tool);
+            run_task(
+                "run",
+                tool_args,
+                &current_dir,
+                &paths,
+                cli.quiet,
+                run_args.tool,
+            )
+            .await?;
         }
 
-        Commands::Dev { args } => {
-            run_task("dev", args, &current_dir, &paths, cli.quiet).await?;
+        Commands::Dev(dev_args) => {
+            let tool = resolve_project_config_with_tool(&current_dir, None, dev_args.tool, &paths)
+                .build_tool
+                .unwrap_or(BuildTool::Gradle);
+            let tool_args = dev_args.clone().into_tool_args(tool);
+            run_task(
+                "dev",
+                tool_args,
+                &current_dir,
+                &paths,
+                cli.quiet,
+                dev_args.tool,
+            )
+            .await?;
         }
 
         Commands::Tree => {
@@ -947,8 +1304,21 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Clean { args } => {
-            run_task("clean", args, &current_dir, &paths, cli.quiet).await?;
+        Commands::Clean(clean_args) => {
+            let tool =
+                resolve_project_config_with_tool(&current_dir, None, clean_args.tool, &paths)
+                    .build_tool
+                    .unwrap_or(BuildTool::Gradle);
+            let tool_args = clean_args.clone().into_tool_args(tool);
+            run_task(
+                "clean",
+                tool_args,
+                &current_dir,
+                &paths,
+                cli.quiet,
+                clean_args.tool,
+            )
+            .await?;
         }
 
         Commands::Exec { command, args } => {
@@ -993,6 +1363,17 @@ async fn main() -> Result<()> {
                 );
             }
         }
+
+        Commands::External(args) => {
+            if args.is_empty() {
+                Cli::command().print_help().ok();
+                println!();
+                return Ok(());
+            }
+            let task_name = &args[0];
+            let task_args = args[1..].to_vec();
+            run_task(task_name, task_args, &current_dir, &paths, cli.quiet, None).await?;
+        }
     }
 
     Ok(())
@@ -1004,13 +1385,14 @@ async fn run_task(
     current_dir: &Path,
     paths: &DjukePaths,
     quiet: bool,
+    tool_override: Option<BuildTool>,
 ) -> Result<()> {
-    let config = resolve_project_config(current_dir, None, paths);
+    let config = resolve_project_config_with_tool(current_dir, None, tool_override, paths);
     let installed_jdk = resolve_jdk(&config.jdk_spec, paths, true, quiet).await?;
 
     let tool = config.build_tool.ok_or_else(|| {
         DjukeError::NoBuildToolFound(format!(
-            "Cannot run task '{}': no Maven or Gradle project detected in '{}'",
+            "Cannot run task '{}': no Maven or Gradle project detected in '{}'. Tip: pass '--tool maven' or '--tool gradle', or run 'djuke new' / 'djuke init'.",
             task_name,
             current_dir.display()
         ))
@@ -1029,6 +1411,35 @@ async fn run_task(
         task_name,
         task_command: &task_cmd,
         extra_args: &extra_args,
+        extra_env: &config.env,
+        paths: Some(paths),
+    })
+    .await?;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    Ok(())
+}
+
+async fn run_raw_tool(
+    tool: BuildTool,
+    args: &[String],
+    current_dir: &Path,
+    paths: &DjukePaths,
+    quiet: bool,
+) -> Result<()> {
+    let config = resolve_project_config_with_tool(current_dir, None, Some(tool), paths);
+    let installed_jdk = resolve_jdk(&config.jdk_spec, paths, true, quiet).await?;
+
+    let status = execute_task(TaskExecution {
+        project_root: &config.project_root,
+        java_home: &installed_jdk.java_home,
+        tool,
+        task_name: &tool.to_string(),
+        task_command: "",
+        extra_args: args,
         extra_env: &config.env,
         paths: Some(paths),
     })

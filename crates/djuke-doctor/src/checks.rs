@@ -140,7 +140,10 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
         status: has_jdks,
         message: jdk_msg,
         hint: if !has_jdks {
-            Some("Run 'djuke java install 21' or 'djuke java install latest' to install a JDK".into())
+            Some(
+                "Run 'djuke java install 21' or 'djuke java install latest' to install a JDK"
+                    .into(),
+            )
         } else {
             None
         },

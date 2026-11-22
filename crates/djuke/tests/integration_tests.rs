@@ -185,6 +185,7 @@ fn test_end_to_end_scaffold_and_maven_dependency_lifecycle() {
         template: TemplateType::SpringBoot,
         build_tool: BuildToolChoice::Maven,
         java_version: "21".to_string(),
+        distribution: None,
         destination: project_dir.clone(),
     };
 
@@ -235,6 +236,7 @@ fn test_end_to_end_scaffold_and_gradle_kts_dependency_lifecycle() {
         template: TemplateType::Cli,
         build_tool: BuildToolChoice::GradleKts,
         java_version: "21".to_string(),
+        distribution: None,
         destination: project_dir.clone(),
     };
 
@@ -281,6 +283,7 @@ fn test_end_to_end_project_init_in_place_and_dependency_tree() {
         template: TemplateType::SpringBoot,
         build_tool: BuildToolChoice::Maven,
         java_version: "21".to_string(),
+        distribution: None,
         destination: root.clone(),
     };
 
@@ -329,4 +332,87 @@ dependencies {
     assert_eq!(resolved.tasks.get("run").unwrap(), "bootRun");
     assert_eq!(resolved.tasks.get("build").unwrap(), "build");
     assert_eq!(resolved.tasks.get("test").unwrap(), "test");
+}
+
+#[tokio::test]
+async fn test_doctor_reports_unready_when_no_jdk_installed() {
+    use djuke_doctor::run_doctor_checks;
+
+    let dir = tempdir().unwrap();
+    let paths = DjukePaths {
+        root: dir.path().join(".djuke-home"),
+    };
+    paths.ensure_dirs().unwrap();
+
+    let report = run_doctor_checks(dir.path(), &paths).await.unwrap();
+    assert!(
+        !report.overall_status,
+        "overall status must be false when no JDK is installed"
+    );
+
+    let jdk_check = report
+        .checks
+        .iter()
+        .find(|c| c.name == "Installed JDKs")
+        .expect("Installed JDKs check must exist");
+    assert!(
+        !jdk_check.status,
+        "Installed JDKs check must fail when store is empty"
+    );
+    assert!(jdk_check
+        .hint
+        .as_ref()
+        .unwrap()
+        .contains("djuke java install"));
+}
+
+#[test]
+fn test_jdk_distribution_support_all_9_distros() {
+    use djuke_core::JdkDistribution;
+    use std::str::FromStr;
+
+    let distros = [
+        ("temurin", JdkDistribution::Temurin),
+        ("corretto", JdkDistribution::Corretto),
+        ("zulu", JdkDistribution::Zulu),
+        ("microsoft", JdkDistribution::Microsoft),
+        ("semeru", JdkDistribution::Semeru),
+        ("graalvm", JdkDistribution::Graalvm),
+        ("liberica", JdkDistribution::Liberica),
+        ("oracle", JdkDistribution::Oracle),
+        ("sapmachine", JdkDistribution::Sapmachine),
+    ];
+
+    for (name, expected) in distros {
+        let parsed = JdkDistribution::from_str(name).unwrap();
+        assert_eq!(parsed, expected);
+    }
+}
+
+#[test]
+fn test_template_generation_with_custom_distro_and_latest_java() {
+    use djuke_core::JdkDistribution;
+    use djuke_templates::{generate_project, BuildToolChoice, NewProjectOptions, TemplateType};
+
+    let dir = tempdir().unwrap();
+    let project_dir = dir.path().join("liberica-app");
+
+    let opts = NewProjectOptions {
+        name: "liberica-app".to_string(),
+        group_id: "com.example.liberica".to_string(),
+        template: TemplateType::Cli,
+        build_tool: BuildToolChoice::GradleKts,
+        java_version: "latest".to_string(),
+        distribution: Some(JdkDistribution::Liberica),
+        destination: project_dir.clone(),
+    };
+
+    generate_project(&opts).unwrap();
+
+    let djuke_toml = fs::read_to_string(project_dir.join("djuke.toml")).unwrap();
+    assert!(djuke_toml.contains("distribution = \"liberica\""));
+    assert!(djuke_toml.contains("version = \"latest\""));
+
+    let build_kts = fs::read_to_string(project_dir.join("build.gradle.kts")).unwrap();
+    assert!(build_kts.contains("JavaLanguageVersion.of(23)"));
 }
