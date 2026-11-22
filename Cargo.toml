@@ -1,0 +1,71 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/djuke",
+    "crates/djuke-core",
+    "crates/djuke-platform",
+    "crates/djuke-config",
+    "crates/djuke-download",
+    "crates/djuke-archive",
+    "crates/djuke-jdk",
+    "crates/djuke-build",
+    "crates/djuke-process",
+    "crates/djuke-doctor",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["djuke contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/djuke-dev/djuke"
+rust-version = "1.80"
+
+[workspace.dependencies]
+# Internal crates
+djuke-core = { path = "crates/djuke-core" }
+djuke-platform = { path = "crates/djuke-platform" }
+djuke-config = { path = "crates/djuke-config" }
+djuke-download = { path = "crates/djuke-download" }
+djuke-archive = { path = "crates/djuke-archive" }
+djuke-jdk = { path = "crates/djuke-jdk" }
+djuke-build = { path = "crates/djuke-build" }
+djuke-process = { path = "crates/djuke-process" }
+djuke-doctor = { path = "crates/djuke-doctor" }
+
+# Async & Networking
+tokio = { version = "1.40", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+futures-util = "0.3"
+
+# Serialization & Config
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# CLI & Terminal UX
+clap = { version = "4.5", features = ["derive", "env", "cargo"] }
+indicatif = "0.17"
+colored = "2.1"
+console = "0.15"
+
+# Errors & Diagnostics
+thiserror = "1.0"
+miette = { version = "7.4", features = ["fancy"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Archive & Hashing
+flate2 = "1.0"
+tar = "0.4"
+zip = "2.2"
+sha2 = "0.10"
+hex = "0.4"
+
+# Utilities
+tempfile = "3.12"
+dirs = "5.0"
+which = "6.0"
+regex = "1.10"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
