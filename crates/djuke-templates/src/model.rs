@@ -88,4 +88,5 @@ pub struct NewProjectOptions {
     pub java_version: String,
     pub distribution: Option<djuke_core::JdkDistribution>,
     pub destination: PathBuf,
+    pub framework_version: Option<String>,
 }
