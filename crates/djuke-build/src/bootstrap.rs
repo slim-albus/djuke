@@ -6,8 +6,36 @@ use djuke_core::{BuildTool, DjukeError, Result};
 use djuke_download::Downloader;
 use djuke_platform::DjukePaths;
 
-pub const DEFAULT_GRADLE_VERSION: &str = "8.10.2";
-pub const DEFAULT_MAVEN_VERSION: &str = "3.9.9";
+pub const DEFAULT_GRADLE_VERSION: &str = "9.9.2";
+pub const DEFAULT_MAVEN_VERSION: &str = "3.9.16";
+
+/// Extracts the integer major version from a version specification string (e.g. "21", "27.0.1.1", "17.0.10", "latest", "lts").
+pub fn extract_java_major(version: &str) -> Option<u32> {
+    let trimmed = version.trim();
+    if trimmed.eq_ignore_ascii_case("latest") {
+        return Some(23);
+    }
+    if trimmed.eq_ignore_ascii_case("lts") {
+        return Some(21);
+    }
+    let s = if let Some(stripped) = trimmed.strip_prefix("1.") {
+        stripped
+    } else {
+        trimmed
+    };
+    let num: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+    num.parse::<u32>().ok()
+}
+
+/// Resolves the optimal, officially compatible Gradle version for a given target Java version.
+/// Defaults to the latest available Gradle 9.9.2 for Java 17+, and Gradle 8.14.8 for legacy Java 8-16.
+pub fn compatible_gradle_version_for_java(java_version: &str) -> &'static str {
+    let major = extract_java_major(java_version).unwrap_or(21);
+    match major {
+        0..=16 => "8.14.8",       // Latest Gradle 8 series for legacy Java 8-16
+        17..=u32::MAX => "9.9.2", // Latest Gradle 9 series for modern Java (17, 21, 23, 24, 25, 27+)
+    }
+}
 
 // Embedded standard wrapper assets
 const GRADLEW_SH: &str = include_str!("../assets/gradlew");
@@ -56,6 +84,22 @@ zipStorePath=wrapper/dists\n",
         v
     );
     fs::write(wrapper_dir.join("gradle-wrapper.properties"), props)?;
+
+    // 5. Ensure gradle.properties exists with modern performance & native access tuning
+    let gradle_props = project_root.join("gradle.properties");
+    if !gradle_props.exists() {
+        let is_modern = v.starts_with('9') || v.starts_with("8.14") || v.starts_with("8.13");
+        let jvmargs = if is_modern {
+            "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED"
+        } else {
+            "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8"
+        };
+        let props_content = format!(
+            "{}\norg.gradle.parallel=true\norg.gradle.caching=true\n",
+            jvmargs
+        );
+        let _ = fs::write(gradle_props, props_content);
+    }
 
     Ok(())
 }
@@ -225,7 +269,7 @@ mod tests {
         assert!(props_file.is_file());
 
         let props = fs::read_to_string(&props_file).unwrap();
-        assert!(props.contains("gradle-8.10.2-bin.zip"));
+        assert!(props.contains("gradle-9.9.2-bin.zip"));
     }
 
     #[test]
@@ -249,6 +293,6 @@ mod tests {
         assert!(props_file.is_file());
 
         let props = fs::read_to_string(&props_file).unwrap();
-        assert!(props.contains("apache-maven-3.9.9-bin.zip"));
+        assert!(props.contains("apache-maven-3.9.16-bin.zip"));
     }
 }

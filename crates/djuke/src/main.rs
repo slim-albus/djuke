@@ -568,11 +568,11 @@ fn resolve_project_options(
         None => {
             if is_interactive {
                 let templates = [
-                    "CLI Application        - Minimal Java console app with Main class",
-                    "Library                - Reusable Java library",
-                    "Spring Boot Web API    - Full-stack web application with Spring Boot & Actuator",
-                    "Quarkus REST API       - High-performance reactive microservice",
-                    "Micronaut Microservice - Cloud-native modular Java application",
+                    "CLI Application        - Minimal Java console app with Main class (Java 8 - 27+)",
+                    "Library                - Reusable Java library with JUnit 5 test suite (Java 8 - 27+)",
+                    "Spring Boot Web API    - Full-stack web application with Spring Boot 3.4 & Actuator (Java 17 - 25)",
+                    "Quarkus REST API       - Supersonic Subatomic reactive microservice (Java 17 - 23)",
+                    "Micronaut Microservice - Cloud-native modular Java application (Java 17 - 23)",
                 ];
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select project template")
@@ -600,9 +600,9 @@ fn resolve_project_options(
         None => {
             if is_interactive {
                 let tools = [
-                    "Gradle (Kotlin DSL - build.gradle.kts) [Recommended]",
-                    "Gradle (Groovy DSL - build.gradle)",
-                    "Maven (pom.xml)",
+                    "Gradle (Kotlin DSL - build.gradle.kts)   [Latest Gradle 9.9 - Recommended]",
+                    "Gradle (Groovy DSL - build.gradle)       [Latest Gradle 9.9 - Classic syntax]",
+                    "Maven (pom.xml)                          [Latest Maven 3.9 - Standard XML]",
                 ];
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select build tool")
@@ -622,17 +622,20 @@ fn resolve_project_options(
         }
     };
 
-    // 4. Resolve Java Version
+    // 4. Resolve Java Version (Richer, clearer, more accessible options)
     let java = match opts.java {
         Some(j) => j,
         None => {
             if is_interactive {
                 let versions = [
-                    "21 (LTS - Recommended)",
-                    "17 (LTS)",
-                    "23 (Latest GA)",
-                    "25 (LTS)",
-                    "Custom version...",
+                    "21 (LTS) - Recommended: Current production standard, maximum library compatibility",
+                    "25 (LTS) - Modern standard: Next-generation long-term support",
+                    "23 (GA)  - Recent feature release: Virtual threads & modern language features",
+                    "17 (LTS) - Enterprise LTS: Broad compatibility for established projects",
+                    "27 (EA)  - Next-Gen / Bleeding edge: Early access language features",
+                    "11 (LTS) - Legacy enterprise: Older enterprise maintenance",
+                    "8  (LTS) - Legacy baseline: Java 1.8 compatibility",
+                    "Custom version... (type any version, e.g. 24, 22, 26)",
                 ];
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select target Java version")
@@ -642,10 +645,13 @@ fn resolve_project_options(
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                 match idx {
                     0 => "21".to_string(),
-                    1 => "17".to_string(),
+                    1 => "25".to_string(),
                     2 => "23".to_string(),
-                    3 => "25".to_string(),
-                    4 => dialoguer::Input::with_theme(&theme)
+                    3 => "17".to_string(),
+                    4 => "27".to_string(),
+                    5 => "11".to_string(),
+                    6 => "8".to_string(),
+                    7 => dialoguer::Input::with_theme(&theme)
                         .with_prompt("Enter target Java version")
                         .default("21".to_string())
                         .interact_text()
@@ -658,22 +664,49 @@ fn resolve_project_options(
         }
     };
 
-    // 5. Resolve JDK Distribution / Flavour
+    // 5. Resolve Group ID / Package
+    let group = match opts.group {
+        Some(g) if !g.trim().is_empty() => g.trim().to_string(),
+        _ => {
+            let sanitized_name: String = name
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() {
+                        c.to_ascii_lowercase()
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            let default_group = format!("com.example.{}", sanitized_name);
+            if is_interactive {
+                dialoguer::Input::with_theme(&theme)
+                    .with_prompt("Root package / Group ID")
+                    .default(default_group)
+                    .interact_text()
+                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?
+            } else {
+                "com.example".to_string()
+            }
+        }
+    };
+
+    // 6. Resolve JDK Distribution / Flavour
     let distro = match opts.distro {
         Some(d) => Some(d),
         None => {
             if is_interactive {
                 let distros = [
-                    "Eclipse Temurin [Default]",
-                    "OpenJDK (Official Oracle OpenJDK / jdk.java.net)",
-                    "Amazon Corretto",
-                    "Azul Zulu",
-                    "Microsoft Build of OpenJDK",
-                    "GraalVM Community (Native Image)",
-                    "BellSoft Liberica",
-                    "Oracle JDK",
-                    "SAP SapMachine",
-                    "IBM Semeru (OpenJ9)",
+                    "Eclipse Temurin       [Default - Adoptium open-source build, recommended]",
+                    "OpenJDK (Oracle)      [Official reference openjdk from jdk.java.net]",
+                    "Amazon Corretto       [Production-ready multiplatform distribution from AWS]",
+                    "Azul Zulu             [Certified TCK-tested OpenJDK builds]",
+                    "Microsoft OpenJDK     [Optimized for Azure and general cloud deployments]",
+                    "GraalVM Community     [High-performance runtime with native-image compilation]",
+                    "BellSoft Liberica     [Recommended by Spring Boot, supports full desktop/cloud]",
+                    "Oracle JDK            [Official Oracle commercial/personal distribution]",
+                    "SAP SapMachine        [Enterprise OpenJDK maintained by SAP]",
+                    "IBM Semeru (OpenJ9)   [Low memory footprint JVM powered by Eclipse OpenJ9]",
                 ];
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select JDK distribution (flavour)")
@@ -699,9 +732,6 @@ fn resolve_project_options(
             }
         }
     };
-
-    // 6. Group ID
-    let group = opts.group.unwrap_or_else(|| "com.example".to_string());
 
     Ok((name, template, build_tool, group, java, distro))
 }
@@ -784,12 +814,14 @@ async fn main() -> Result<()> {
                 destination: dest.clone(),
             };
 
+            let java_str = opts.java_version.clone();
             djuke_templates::generate_project(&opts)?;
 
             match b_tool {
                 djuke_templates::BuildToolChoice::GradleKts
                 | djuke_templates::BuildToolChoice::GradleGroovy => {
-                    let _ = djuke_build::create_gradle_wrapper(&dest, None);
+                    let g_ver = djuke_build::compatible_gradle_version_for_java(&java_str);
+                    let _ = djuke_build::create_gradle_wrapper(&dest, Some(g_ver));
                 }
                 djuke_templates::BuildToolChoice::Maven => {
                     let _ = djuke_build::create_maven_wrapper(&dest, None);
@@ -845,12 +877,14 @@ async fn main() -> Result<()> {
                 destination: current_dir.clone(),
             };
 
+            let java_str = opts.java_version.clone();
             djuke_templates::generate_project(&opts)?;
 
             match b_tool {
                 djuke_templates::BuildToolChoice::GradleKts
                 | djuke_templates::BuildToolChoice::GradleGroovy => {
-                    let _ = djuke_build::create_gradle_wrapper(&current_dir, None);
+                    let g_ver = djuke_build::compatible_gradle_version_for_java(&java_str);
+                    let _ = djuke_build::create_gradle_wrapper(&current_dir, Some(g_ver));
                 }
                 djuke_templates::BuildToolChoice::Maven => {
                     let _ = djuke_build::create_maven_wrapper(&current_dir, None);
@@ -1246,9 +1280,11 @@ async fn main() -> Result<()> {
                     if !cli.quiet {
                         println!("No wrapper detected. Bootstrapping {} wrapper...", t);
                     }
+                    let g_ver =
+                        djuke_build::compatible_gradle_version_for_java(&config.jdk_spec.version);
                     if let Err(e) = djuke_build::bootstrap_wrapper(
                         t,
-                        None,
+                        Some(g_ver),
                         &config.project_root,
                         &installed_jdk.java_home,
                         &paths,
@@ -1287,7 +1323,10 @@ async fn main() -> Result<()> {
                     Some(BuildTool::Gradle),
                     &paths,
                 );
-                djuke_build::create_gradle_wrapper(&config.project_root, version.as_deref())?;
+                let v = version.as_deref().unwrap_or_else(|| {
+                    djuke_build::compatible_gradle_version_for_java(&config.jdk_spec.version)
+                });
+                djuke_build::create_gradle_wrapper(&config.project_root, Some(v))?;
                 if !cli.quiet {
                     println!(
                         "{}",

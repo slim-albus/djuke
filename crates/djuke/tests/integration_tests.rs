@@ -461,3 +461,40 @@ fn test_gradle_and_maven_wrapper_auto_generation_in_project_without_wrapper() {
         .join("maven-wrapper.properties")
         .exists());
 }
+
+#[test]
+fn test_gradle_wrapper_compatible_version_selection_for_java_27_and_modern_runtimes() {
+    use djuke_build::compatible_gradle_version_for_java;
+
+    // Verify version selection for various Java versions
+    assert_eq!(compatible_gradle_version_for_java("27"), "9.9.2");
+    assert_eq!(compatible_gradle_version_for_java("25"), "9.9.2");
+    assert_eq!(compatible_gradle_version_for_java("23"), "9.9.2");
+    assert_eq!(compatible_gradle_version_for_java("21"), "9.9.2");
+    assert_eq!(compatible_gradle_version_for_java("17"), "9.9.2");
+    assert_eq!(compatible_gradle_version_for_java("11"), "8.14.8");
+    assert_eq!(compatible_gradle_version_for_java("8"), "8.14.8");
+
+    // Verify wrapper generation writes exact Gradle 9.9.2 properties and gradle.properties
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+
+    let ver = compatible_gradle_version_for_java("27");
+    djuke_build::create_gradle_wrapper(root, Some(ver)).unwrap();
+
+    let props_path = root
+        .join("gradle")
+        .join("wrapper")
+        .join("gradle-wrapper.properties");
+    assert!(props_path.is_file());
+    let props = fs::read_to_string(&props_path).unwrap();
+    assert!(props.contains("gradle-9.9.2-bin.zip"));
+
+    // Verify gradle.properties is created with modern jvmargs and performance tuning
+    let gradle_props_path = root.join("gradle.properties");
+    assert!(gradle_props_path.is_file());
+    let gradle_props = fs::read_to_string(&gradle_props_path).unwrap();
+    assert!(gradle_props.contains("--enable-native-access=ALL-UNNAMED"));
+    assert!(gradle_props.contains("org.gradle.parallel=true"));
+    assert!(gradle_props.contains("org.gradle.caching=true"));
+}
