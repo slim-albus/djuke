@@ -9,12 +9,14 @@
 ## Features
 
 - **Zero-Config Detection**: Automatically inspects `pom.xml`, `build.gradle`, `build.gradle.kts`, `.java-version`, and `.sdkmanrc`.
-- **Multi-Vendor JDK Management**: Automatic resolution and installation of Eclipse Temurin, Amazon Corretto, Azul Zulu, and Microsoft OpenJDK via Foojay Disco API v3.
-- **Wrapper-First Build Orchestration**: Directly delegates tasks (`build`, `test`, `run`, `dev`, `clean`) to existing `./gradlew` or `./mvnw` wrappers, or transparently auto-provisions the build tool when wrappers are omitted.
+- **Multi-Vendor JDK Management**: Automatic resolution and installation of Temurin, Corretto, Zulu, Microsoft, Semeru, GraalVM, Liberica, Oracle, and SapMachine via Foojay Disco API v3, with dynamic `latest` and `lts` alias support.
+- **Build Tool Selection**: Seamlessly choose between Gradle and Maven via `--tool`, `djuke.toml`, or project auto-detection.
+- **Arbitrary Task Passthrough**: Any task or goal (e.g. `djuke bootJar`, `djuke compileJava`, `djuke spotlessApply`, `djuke dependency:tree`) is forwarded directly to the build tool with `JAVA_HOME` injected.
+- **Dedicated Tool Execution**: Direct access to `djuke gradle` (daemon stop/status, wrapper generation, custom tasks) and `djuke maven` (wrapper generation, phases/goals).
 - **Process Isolation**: Ephemerally injects `JAVA_HOME` and prepends `$JAVA_HOME/bin` to `PATH` for child processes without modifying global system environment variables.
 - **Dependency Insights**: Interactive dependency tree (`djuke tree`), version upgrade checks (`djuke outdated`), and vulnerability security auditing via OSV.dev (`djuke audit`).
 - **Project Bootstrapping**: Scaffolding for `cli`, `lib`, `spring-boot`, `quarkus`, and `micronaut` templates via `djuke new` and in-place `djuke init`.
-- **Diagnostics**: Built-in `djuke doctor` to inspect machine status, JDK paths, wrapper permissions, and network connectivity.
+- **Diagnostics**: Built-in `djuke doctor` to inspect machine status, JDK store health, wrapper permissions, and network connectivity.
 
 ---
 
@@ -24,8 +26,12 @@
 # Check system health and environment
 djuke doctor
 
+# Install the latest GA or LTS JDK for any distribution
+djuke java install latest
+djuke java install lts --distro zulu
+
 # Initialize a new project in the current directory
-djuke init --template spring-boot --build-tool maven
+djuke init --template spring-boot --build-tool maven --distro temurin
 
 # Prepare current project (installs configured JDK and validates wrappers)
 djuke setup
@@ -33,9 +39,18 @@ djuke setup
 # Start development / live-reload mode
 djuke dev
 
-# Run project build or test suite
-djuke build
-djuke test
+# Run project build or test suite (supports --tool, --offline, -U, -P, -D, --parallel)
+djuke build --offline
+djuke test -DskipTests=false
+
+# Run arbitrary tasks or plugin goals directly
+djuke bootJar
+djuke spotlessApply
+djuke dependency:tree
+
+# Manage Gradle daemons directly
+djuke gradle status
+djuke gradle stop
 
 # Inspect project dependencies and security advisories
 djuke tree
