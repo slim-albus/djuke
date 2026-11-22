@@ -1,0 +1,14 @@
+[package]
+name = "djuke-archive"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+djuke-core.workspace = true
+tar.workspace = true
+flate2.workspace = true
+zip.workspace = true
+tempfile.workspace = true
+tracing.workspace = true

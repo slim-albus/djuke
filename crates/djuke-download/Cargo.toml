@@ -1,0 +1,20 @@
+[package]
+name = "djuke-download"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+djuke-core.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+indicatif.workspace = true
+sha2.workspace = true
+hex.workspace = true
+tracing.workspace = true
+
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,11 @@
+[package]
+name = "djuke-platform"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+djuke-core.workspace = true
+dirs.workspace = true
+serde.workspace = true
