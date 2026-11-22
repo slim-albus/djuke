@@ -12,35 +12,70 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-and-package:
-    name: Package (${{ matrix.target }})
+  build-windows:
+    name: Build & Package (Windows x86_64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-x86_64
+
+      - name: Build release binary
+        run: cargo build --release --bin djuke
+
+      - name: Package Windows distribution
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item target/release/djuke.exe dist/
+          Copy-Item README.md dist/ -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist/* -DestinationPath djuke-windows-x86_64.zip
+          $hash = (Get-FileHash -Algorithm SHA256 djuke-windows-x86_64.zip).Hash.ToLower()
+          "$hash  djuke-windows-x86_64.zip" | Out-File -Encoding utf8 djuke-windows-x86_64.zip.sha256
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: djuke-windows-x86_64
+          path: |
+            djuke-windows-x86_64.zip
+            djuke-windows-x86_64.zip.sha256
+            target/release/djuke.exe
+
+      - name: Release Assets (Tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            djuke-windows-x86_64.zip
+            djuke-windows-x86_64.zip.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-unix:
+    name: Build & Package (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          - name: Linux x86_64
+            target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact_name: djuke-linux-x86_64.tar.gz
-            binary: target/release/djuke
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact_name: djuke-linux-aarch64.tar.gz
-            use_cross: true
-            binary: target/aarch64-unknown-linux-gnu/release/djuke
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            artifact_name: djuke-windows-x86_64.zip
-            binary: target/release/djuke.exe
-          - target: x86_64-apple-darwin
-            os: macos-13
-            artifact_name: djuke-macos-x86_64.tar.gz
-            binary: target/release/djuke
-          - target: aarch64-apple-darwin
+          - name: macOS ARM64
+            target: aarch64-apple-darwin
             os: macos-latest
             artifact_name: djuke-macos-aarch64.tar.gz
-            binary: target/release/djuke
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -55,48 +90,18 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Install cross (if needed)
-        if: matrix.use_cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
       - name: Build release binary
-        run: |
-          if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --bin djuke --target ${{ matrix.target }}
-          elif [ "${{ runner.os }}" = "Windows" ]; then
-            cargo build --release --bin djuke
-          else
-            cargo build --release --bin djuke --target ${{ matrix.target }}
-            if [ -f "target/${{ matrix.target }}/release/djuke" ]; then
-              mkdir -p target/release
-              cp "target/${{ matrix.target }}/release/djuke" target/release/djuke
-            fi
-          fi
-        shell: bash
+        run: cargo build --release --bin djuke --target ${{ matrix.target }}
 
-      - name: Create archive package (Windows)
-        if: runner.os == 'Windows'
+      - name: Package Unix distribution
         run: |
           mkdir dist
-          cp target/release/djuke.exe dist/
-          cp README.md dist/ 2>$null || true
-          cp LICENSE dist/ 2>$null || true
-          Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact_name }}
-          Get-FileHash -Algorithm SHA256 ${{ matrix.artifact_name }} | Out-File -Encoding utf8 "${{ matrix.artifact_name }}.sha256"
-        shell: pwsh
-
-      - name: Create archive package (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          mkdir dist
-          cp ${{ matrix.binary }} dist/
+          cp target/${{ matrix.target }}/release/djuke dist/
           cp README.md dist/ 2>/dev/null || true
-          cp LICENSE dist/ 2>/dev/null || true
           tar -czvf ${{ matrix.artifact_name }} -C dist .
           shasum -a 256 ${{ matrix.artifact_name }} > "${{ matrix.artifact_name }}.sha256"
-        shell: bash
 
-      - name: Upload Build Artifacts
+      - name: Upload Unix Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
@@ -104,7 +109,7 @@ jobs:
             ${{ matrix.artifact_name }}
             ${{ matrix.artifact_name }}.sha256
 
-      - name: Release Assets
+      - name: Release Assets (Tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
