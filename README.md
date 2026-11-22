@@ -1,8 +1,6 @@
 # djuke
 
-A fast JDK manager, build orchestrator, and package manager for Java.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+A prototype JDK manager, build orchestrator, and package manager for Java that uses Gradle or Maven underneath.
 
 ---
 
