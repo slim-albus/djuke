@@ -37,6 +37,21 @@ impl JdkStore {
 
     pub fn find_installed(&self, spec: &JdkSpec) -> Option<InstalledJdk> {
         let installed = self.list_installed().ok()?;
+        if spec.version.eq_ignore_ascii_case("latest") {
+            return installed
+                .into_iter()
+                .filter(|jdk| jdk.distribution == spec.distribution)
+                .max_by_key(|jdk| jdk.major_version);
+        }
+        if spec.version.eq_ignore_ascii_case("lts") {
+            return installed
+                .into_iter()
+                .filter(|jdk| {
+                    jdk.distribution == spec.distribution
+                        && matches!(jdk.major_version, 25 | 21 | 17 | 11 | 8)
+                })
+                .max_by_key(|jdk| jdk.major_version);
+        }
         installed.into_iter().find(|jdk| {
             let distro_match = jdk.distribution == spec.distribution;
             let ver_match = jdk.major_version.to_string() == spec.version

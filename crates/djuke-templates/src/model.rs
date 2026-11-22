@@ -86,5 +86,6 @@ pub struct NewProjectOptions {
     pub template: TemplateType,
     pub build_tool: BuildToolChoice,
     pub java_version: String,
+    pub distribution: Option<djuke_core::JdkDistribution>,
     pub destination: PathBuf,
 }

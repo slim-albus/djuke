@@ -175,6 +175,21 @@ impl fmt::Display for BuildTool {
     }
 }
 
+impl FromStr for BuildTool {
+    type Err = DjukeError;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "gradle" | "gradle-kts" | "gradlew" => Ok(Self::Gradle),
+            "maven" | "mvn" | "mvnw" => Ok(Self::Maven),
+            other => Err(DjukeError::Generic(format!(
+                "Unknown build tool '{}'. Supported: gradle, maven",
+                other
+            ))),
+        }
+    }
+}
+
 pub type TaskMap = HashMap<String, String>;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

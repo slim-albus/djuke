@@ -5,6 +5,20 @@ use djuke_platform::Platform;
 
 const DISCO_BASE_URL: &str = "https://api.foojay.io/disco/v3.0";
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscoMajorVersion {
+    pub major_version: u32,
+    pub term_of_support: Option<String>,
+    pub maintained: Option<bool>,
+    pub early_access_only: Option<bool>,
+    pub release_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DiscoMajorVersionsResponse {
+    result: Option<Vec<DiscoMajorVersion>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoLinks {
     pub pkg_info_uri: Option<String>,
@@ -65,17 +79,78 @@ impl DiscoClient {
         Self::default()
     }
 
+    pub async fn fetch_major_versions(&self) -> Result<Vec<DiscoMajorVersion>> {
+        let url = format!("{}/major_versions", DISCO_BASE_URL);
+        let response =
+            self.client.get(&url).send().await.map_err(|e| {
+                DjukeError::Network(format!("Failed to fetch major versions: {}", e))
+            })?;
+
+        if !response.status().is_success() {
+            return Err(DjukeError::Network(format!(
+                "Disco API returned error status: {}",
+                response.status()
+            )));
+        }
+
+        let body: DiscoMajorVersionsResponse = response
+            .json()
+            .await
+            .map_err(|e| DjukeError::Serialization(e.to_string()))?;
+
+        Ok(body.result.unwrap_or_default())
+    }
+
+    pub async fn resolve_version_alias(&self, version: &str) -> String {
+        let trimmed = version.trim();
+        if trimmed.eq_ignore_ascii_case("latest") {
+            if let Ok(versions) = self.fetch_major_versions().await {
+                let max_ga = versions
+                    .into_iter()
+                    .filter(|v| {
+                        v.release_status.as_deref() == Some("ga")
+                            && !v.early_access_only.unwrap_or(false)
+                    })
+                    .map(|v| v.major_version)
+                    .max();
+                if let Some(m) = max_ga {
+                    return m.to_string();
+                }
+            }
+            "23".to_string()
+        } else if trimmed.eq_ignore_ascii_case("lts") {
+            if let Ok(versions) = self.fetch_major_versions().await {
+                let max_lts = versions
+                    .into_iter()
+                    .filter(|v| {
+                        v.release_status.as_deref() == Some("ga")
+                            && !v.early_access_only.unwrap_or(false)
+                            && v.term_of_support.as_deref() == Some("LTS")
+                    })
+                    .map(|v| v.major_version)
+                    .max();
+                if let Some(m) = max_lts {
+                    return m.to_string();
+                }
+            }
+            "21".to_string()
+        } else {
+            trimmed.to_string()
+        }
+    }
+
     pub async fn query_packages(
         &self,
         version: &str,
         distro: JdkDistribution,
         platform: Platform,
     ) -> Result<Vec<DiscoPackage>> {
+        let resolved_version = self.resolve_version_alias(version).await;
         let url = format!("{}/packages", DISCO_BASE_URL);
         let ext = platform.os.default_archive_ext();
 
         let req = self.client.get(&url).query(&[
-            ("version", version),
+            ("version", resolved_version.as_str()),
             ("distro", distro.as_disco_name()),
             ("operating_system", platform.os.as_disco_name()),
             ("architecture", platform.arch.as_disco_name()),
@@ -132,18 +207,53 @@ impl DiscoClient {
         distro: JdkDistribution,
         platform: Platform,
     ) -> Result<DiscoPackage> {
-        let packages = self.query_packages(version, distro, platform).await?;
+        let is_latest = version.eq_ignore_ascii_case("latest");
+        let is_lts = version.eq_ignore_ascii_case("lts");
+
+        if is_latest || is_lts {
+            if let Ok(versions) = self.fetch_major_versions().await {
+                let mut candidates: Vec<u32> = versions
+                    .into_iter()
+                    .filter(|v| {
+                        v.release_status.as_deref() == Some("ga")
+                            && !v.early_access_only.unwrap_or(false)
+                            && (!is_lts || v.term_of_support.as_deref() == Some("LTS"))
+                    })
+                    .map(|v| v.major_version)
+                    .collect();
+                candidates.sort_unstable_by(|a, b| b.cmp(a));
+
+                for ver in candidates {
+                    let ver_str = ver.to_string();
+                    if let Ok(pkgs) = self.query_packages(&ver_str, distro, platform).await {
+                        if let Some(mut pkg) = pkgs.into_iter().next() {
+                            self.enrich_package(&mut pkg).await;
+                            return Ok(pkg);
+                        }
+                    }
+                }
+            }
+        }
+
+        let resolved_version = self.resolve_version_alias(version).await;
+        let packages = self
+            .query_packages(&resolved_version, distro, platform)
+            .await?;
         let mut pkg = packages
             .into_iter()
             .next()
             .ok_or_else(|| DjukeError::JdkNotFound {
-                version: version.to_string(),
+                version: resolved_version.clone(),
                 distro: distro.to_string(),
                 os: platform.os.to_string(),
                 arch: platform.arch.to_string(),
             })?;
 
-        // Enrich with direct download link and checksum from /ids/{id}
+        self.enrich_package(&mut pkg).await;
+        Ok(pkg)
+    }
+
+    async fn enrich_package(&self, pkg: &mut DiscoPackage) {
         if let Some(id) = &pkg.id {
             if let Ok(Some(info)) = self.fetch_package_info(id).await {
                 if let Some(uri) = info.direct_download_uri {
@@ -158,13 +268,10 @@ impl DiscoClient {
             }
         }
 
-        // Fallback to pkg_download_redirect if direct_download_uri was not found
         if pkg.download_link.is_none() {
             if let Some(links) = &pkg.links {
                 pkg.download_link = links.pkg_download_redirect.clone();
             }
         }
-
-        Ok(pkg)
     }
 }

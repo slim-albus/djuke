@@ -77,19 +77,23 @@ Thumbs.db
         BuildToolChoice::Maven => "maven",
     };
 
+    let distro = opts
+        .distribution
+        .unwrap_or_else(djuke_core::JdkDistribution::default_distro);
+
     let djuke_toml = format!(
         r#"[project]
 name = "{}"
 
 [java]
 version = "{}"
-distribution = "temurin"
+distribution = "{}"
 
 [build]
 tool = "{}"
 wrapper = true
 "#,
-        opts.name, opts.java_version, tool_name
+        opts.name, opts.java_version, distro, tool_name
     );
     fs::write(dest.join("djuke.toml"), djuke_toml)?;
 
@@ -329,10 +333,21 @@ class ApplicationTest {{
     Ok(())
 }
 
+fn effective_java_version(v: &str) -> &str {
+    if v.eq_ignore_ascii_case("latest") {
+        "23"
+    } else if v.eq_ignore_ascii_case("lts") {
+        "21"
+    } else {
+        v
+    }
+}
+
 fn generate_gradle_kts(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let settings = format!("rootProject.name = \"{}\"\n", opts.name);
     fs::write(dest.join("settings.gradle.kts"), settings)?;
 
+    let j_ver = effective_java_version(&opts.java_version);
     let (plugins, deps) = match opts.template {
         TemplateType::Cli => (
             "    application\n    `java-library`",
@@ -409,7 +424,7 @@ tasks.named<Test>("test") {{
     useJUnitPlatform()
 }}
 "#,
-        plugins, opts.group_id, opts.java_version, deps
+        plugins, opts.group_id, j_ver, deps
     );
 
     fs::write(dest.join("build.gradle.kts"), build)?;
@@ -420,6 +435,7 @@ fn generate_gradle_groovy(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let settings = format!("rootProject.name = '{}'\n", opts.name);
     fs::write(dest.join("settings.gradle"), settings)?;
 
+    let j_ver = effective_java_version(&opts.java_version);
     let build = format!(
         r#"plugins {{
     id 'application'
@@ -453,7 +469,7 @@ test {{
     useJUnitPlatform()
 }}
 "#,
-        opts.group_id, opts.java_version, opts.group_id
+        opts.group_id, j_ver, opts.group_id
     );
 
     fs::write(dest.join("build.gradle"), build)?;
@@ -461,6 +477,7 @@ test {{
 }
 
 fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
+    let j_ver = effective_java_version(&opts.java_version);
     let pom = match opts.template {
         TemplateType::SpringBoot => {
             format!(
@@ -507,7 +524,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, opts.java_version
+                opts.group_id, opts.name, j_ver
             )
         }
         TemplateType::Quarkus => {
@@ -569,7 +586,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, opts.java_version
+                opts.group_id, opts.name, j_ver
             )
         }
         TemplateType::Micronaut => {
@@ -617,7 +634,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, opts.java_version, opts.java_version
+                opts.group_id, opts.name, j_ver, j_ver
             )
         }
         _ => {
@@ -659,7 +676,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, opts.java_version, opts.java_version
+                opts.group_id, opts.name, j_ver, j_ver
             )
         }
     };
@@ -682,6 +699,7 @@ mod tests {
             template: TemplateType::Cli,
             build_tool: BuildToolChoice::GradleKts,
             java_version: "21".into(),
+            distribution: None,
             destination: dir.path().to_path_buf(),
         };
 
@@ -709,6 +727,7 @@ mod tests {
             template: TemplateType::SpringBoot,
             build_tool: BuildToolChoice::Maven,
             java_version: "21".into(),
+            distribution: None,
             destination: dir.path().to_path_buf(),
         };
 
