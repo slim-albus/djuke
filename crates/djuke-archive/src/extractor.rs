@@ -48,7 +48,7 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> Result<()
     }
 
     // Atomic move / rename
-    if let Err(_e) = fs::rename(&final_content_dir, destination_dir) {
+    if fs::rename(&final_content_dir, destination_dir).is_err() {
         // Fallback for cross-device or permission limits
         copy_dir_all(&final_content_dir, destination_dir)?;
     }

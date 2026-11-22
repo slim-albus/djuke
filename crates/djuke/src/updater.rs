@@ -196,7 +196,7 @@ fn replace_executable(new_binary: &Path, current_exe: &Path) -> Result<()> {
         fs::set_permissions(new_binary, perms)?;
 
         // On Unix, atomic rename replaces the directory entry even if running
-        if let Err(_) = fs::rename(new_binary, current_exe) {
+        if fs::rename(new_binary, current_exe).is_err() {
             // Fallback across filesystems
             let temp_dest = current_exe.with_extension("djuke_new");
             fs::copy(new_binary, &temp_dest)?;
