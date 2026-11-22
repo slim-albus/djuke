@@ -87,3 +87,85 @@ custom = "echo hello"
     assert_eq!(resolved.tasks.get("build").unwrap(), "assemble");
     assert_eq!(resolved.tasks.get("custom").unwrap(), "echo hello");
 }
+
+
+#[tokio::test]
+async fn test_end_to_end_bare_repo_with_sdkmanrc() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+
+    let sdkmanrc = root.join(".sdkmanrc");
+    fs::write(&sdkmanrc, "java=21.0.4-tem\n").unwrap();
+
+    let build_kts = root.join("build.gradle.kts");
+    fs::write(&build_kts, "// gradle build script\n").unwrap();
+
+    let paths = DjukePaths {
+        root: root.join(".djuke-home"),
+    };
+
+    let resolved = resolve_project_config(root, None, &paths);
+    assert_eq!(resolved.jdk_spec.version, "21");
+    assert_eq!(resolved.build_tool, Some(BuildTool::Gradle));
+}
+
+#[tokio::test]
+async fn test_end_to_end_mock_wrapper_execution_and_env_injection() {
+    use djuke_build::{execute_task, TaskExecution};
+    use std::collections::HashMap;
+
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+    let mock_java_home = root.join("mock-jdk-21");
+    fs::create_dir_all(mock_java_home.join("bin")).unwrap();
+
+    // Create wrapper script that writes JAVA_HOME to a file
+    let output_file = root.join("out.txt");
+    let (wrapper_name, wrapper_content) = if cfg!(windows) {
+        (
+            "gradlew.bat",
+            format!(
+                "@echo off\necho %JAVA_HOME% > \"{}\"\nexit 0\n",
+                output_file.display()
+            ),
+        )
+    } else {
+        (
+            "gradlew",
+            format!(
+                "#!/bin/sh\necho \"$JAVA_HOME\" > \"{}\"\nexit 0\n",
+                output_file.display()
+            ),
+        )
+    };
+
+    let wrapper_path = root.join(wrapper_name);
+    fs::write(&wrapper_path, wrapper_content).unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&wrapper_path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let extra_args = vec!["--info".to_string()];
+    let extra_env = HashMap::new();
+
+    let status = execute_task(TaskExecution {
+        project_root: root,
+        java_home: &mock_java_home,
+        tool: BuildTool::Gradle,
+        task_name: "build",
+        task_command: "build",
+        extra_args: &extra_args,
+        extra_env: &extra_env,
+        paths: None,
+    })
+    .await
+    .unwrap();
+
+    assert!(status.success());
+    assert!(output_file.is_file());
+    let recorded_java_home = fs::read_to_string(output_file).unwrap();
+    assert!(recorded_java_home.contains("mock-jdk-21"));
+}
