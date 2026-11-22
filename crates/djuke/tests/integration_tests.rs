@@ -266,3 +266,67 @@ fn test_end_to_end_scaffold_and_gradle_kts_dependency_lifecycle() {
     let build_after_remove = fs::read_to_string(&build_file).unwrap();
     assert!(!build_after_remove.contains("com.fasterxml.jackson.core:jackson-databind"));
 }
+
+#[test]
+fn test_end_to_end_project_init_in_place_and_dependency_tree() {
+    use djuke_pm::{extract_project_dependencies, render_dependency_tree};
+    use djuke_templates::{generate_project, BuildToolChoice, NewProjectOptions, TemplateType};
+
+    let dir = tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+
+    let opts = NewProjectOptions {
+        name: "in-place-app".to_string(),
+        group_id: "com.example.inplace".to_string(),
+        template: TemplateType::SpringBoot,
+        build_tool: BuildToolChoice::Maven,
+        java_version: "21".to_string(),
+        destination: root.clone(),
+    };
+
+    generate_project(&opts).unwrap();
+    assert!(root.join("pom.xml").is_file());
+    assert!(root.join("djuke.toml").is_file());
+
+    let deps = extract_project_dependencies(&root).unwrap();
+    assert!(!deps.is_empty());
+    assert!(deps
+        .iter()
+        .any(|d| d.artifact_id == "spring-boot-starter-web"));
+
+    let tree = render_dependency_tree("in-place-app", &deps);
+    assert!(tree.contains("in-place-app"));
+    assert!(tree.contains("spring-boot-starter-web"));
+}
+
+#[test]
+fn test_end_to_end_framework_dev_and_run_task_resolution() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+
+    let build_kts = root.join("build.gradle.kts");
+    fs::write(
+        &build_kts,
+        r#"
+plugins {
+    id("org.springframework.boot") version "3.3.4"
+    id("io.spring.dependency-management") version "1.1.6"
+    kotlin("jvm") version "1.9.25"
+}
+dependencies {
+    implementation("org.springframework.boot:spring-boot-starter-web")
+}
+"#,
+    )
+    .unwrap();
+
+    let paths = DjukePaths {
+        root: root.join(".djuke-home"),
+    };
+
+    let resolved = resolve_project_config(root, None, &paths);
+    assert_eq!(resolved.tasks.get("dev").unwrap(), "bootRun");
+    assert_eq!(resolved.tasks.get("run").unwrap(), "bootRun");
+    assert_eq!(resolved.tasks.get("build").unwrap(), "build");
+    assert_eq!(resolved.tasks.get("test").unwrap(), "test");
+}
