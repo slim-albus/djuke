@@ -3,9 +3,10 @@ use std::path::Path;
 use std::process::ExitStatus;
 
 use djuke_core::{BuildTool, DjukeError, Result};
+use djuke_platform::DjukePaths;
 use djuke_process::{CommandContext, ProcessRunner};
 
-use crate::wrapper::find_build_executable;
+use crate::wrapper::find_build_executable_with_paths;
 
 #[derive(Debug, Clone)]
 pub struct TaskExecution<'a> {
@@ -16,16 +17,18 @@ pub struct TaskExecution<'a> {
     pub task_command: &'a str,
     pub extra_args: &'a [String],
     pub extra_env: &'a HashMap<String, String>,
+    pub paths: Option<&'a DjukePaths>,
 }
 
 pub async fn execute_task(exec: TaskExecution<'_>) -> Result<ExitStatus> {
-    let resolved = find_build_executable(exec.project_root, exec.tool).ok_or_else(|| {
-        DjukeError::NoBuildToolFound(format!(
-            "Neither wrapper nor system executable found for '{}' in '{}'",
-            exec.tool,
-            exec.project_root.display()
-        ))
-    })?;
+    let resolved = find_build_executable_with_paths(exec.project_root, exec.tool, exec.paths)
+        .ok_or_else(|| {
+            DjukeError::NoBuildToolFound(format!(
+                "Neither wrapper nor system executable found for '{}' in '{}'",
+                exec.tool,
+                exec.project_root.display()
+            ))
+        })?;
 
     let mut cmd_args: Vec<&str> = exec.task_command.split_whitespace().collect();
 

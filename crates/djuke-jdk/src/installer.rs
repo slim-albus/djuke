@@ -76,6 +76,8 @@ pub async fn install_jdk(spec: &JdkSpec, paths: &DjukePaths, quiet: bool) -> Res
 
     extract_archive(&temp_archive_path, &target_dir)?;
 
+    let effective_home = DjukePaths::effective_java_home(&target_dir);
+
     let installed = InstalledJdk {
         id: folder_name,
         distribution: spec.distribution,
@@ -83,7 +85,7 @@ pub async fn install_jdk(spec: &JdkSpec, paths: &DjukePaths, quiet: bool) -> Res
         major_version: major,
         os: platform.os.to_string(),
         arch: platform.arch.to_string(),
-        java_home: target_dir.clone(),
+        java_home: effective_home,
         installed_at: Utc::now(),
     };
 

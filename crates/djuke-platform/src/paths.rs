@@ -52,11 +52,21 @@ impl DjukePaths {
         Ok(())
     }
 
-    pub fn java_executable(java_home: &Path) -> PathBuf {
-        if Os::current() == Os::Windows {
-            java_home.join("bin").join("java.exe")
+    pub fn effective_java_home(installed_dir: &Path) -> PathBuf {
+        let mac_home = installed_dir.join("Contents").join("Home");
+        if mac_home.is_dir() {
+            mac_home
         } else {
-            java_home.join("bin").join("java")
+            installed_dir.to_path_buf()
+        }
+    }
+
+    pub fn java_executable(java_home: &Path) -> PathBuf {
+        let home = Self::effective_java_home(java_home);
+        if Os::current() == Os::Windows {
+            home.join("bin").join("java.exe")
+        } else {
+            home.join("bin").join("java")
         }
     }
 }

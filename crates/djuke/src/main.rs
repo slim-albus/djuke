@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use djuke_build::{execute_task, TaskExecution};
 use djuke_config::{load_manifest, resolve_project_config};
-use djuke_core::{DjukeError, JdkDistribution, JdkSpec, ProjectManifest};
+use djuke_core::{BuildTool, DjukeError, JdkDistribution, JdkSpec, ProjectManifest};
 use djuke_doctor::run_doctor_checks;
 use djuke_jdk::{install_jdk, resolve_jdk, DiscoClient, JdkStore};
 use djuke_platform::{DjukePaths, Platform};
@@ -89,6 +89,42 @@ enum Commands {
     Env {
         #[arg(help = "Shell type: bash, zsh, fish, powershell")]
         shell: Option<String>,
+    },
+
+    #[command(about = "Gradle build tool commands")]
+    Gradle(GradleArgs),
+
+    #[command(about = "Maven build tool commands")]
+    Maven(MavenArgs),
+}
+
+#[derive(Args)]
+struct GradleArgs {
+    #[command(subcommand)]
+    command: GradleSubcommands,
+}
+
+#[derive(Subcommand)]
+enum GradleSubcommands {
+    #[command(about = "Generate the Gradle wrapper (gradlew, gradlew.bat)")]
+    Wrapper {
+        #[arg(long, help = "Gradle version to generate (default: 8.10.2)")]
+        version: Option<String>,
+    },
+}
+
+#[derive(Args)]
+struct MavenArgs {
+    #[command(subcommand)]
+    command: MavenSubcommands,
+}
+
+#[derive(Subcommand)]
+enum MavenSubcommands {
+    #[command(about = "Generate the Maven wrapper (mvnw, mvnw.cmd)")]
+    Wrapper {
+        #[arg(long, help = "Maven version to generate (default: 3.9.9)")]
+        version: Option<String>,
     },
 }
 
@@ -330,6 +366,32 @@ async fn main() -> Result<()> {
                 .map(|t| t.to_string())
                 .unwrap_or_else(|| "none".into());
 
+            // 3. Auto-bootstrap wrapper if missing
+            let mut wrapper_status = "present";
+            if let Some(tool) = config.build_tool {
+                let has_wrapper = config.has_gradle_wrapper || config.has_maven_wrapper;
+                if !has_wrapper {
+                    if !cli.quiet {
+                        println!("No wrapper detected. Bootstrapping {} wrapper...", tool);
+                    }
+                    if let Err(e) = djuke_build::bootstrap_wrapper(
+                        tool,
+                        None,
+                        &config.project_root,
+                        &installed_jdk.java_home,
+                        &paths,
+                        cli.quiet,
+                    )
+                    .await
+                    {
+                        eprintln!("⚠ Wrapper generation failed: {}", e);
+                        wrapper_status = "missing (generation failed)";
+                    } else {
+                        wrapper_status = "generated";
+                    }
+                }
+            }
+
             println!("\n{}", "Project Environment Ready:".green().bold());
             println!(
                 "  • Java:       {} ({})",
@@ -337,9 +399,45 @@ async fn main() -> Result<()> {
                 installed_jdk.distribution
             );
             println!("  • JAVA_HOME:  {}", installed_jdk.java_home.display());
-            println!("  • Build Tool: {}", tool_str.cyan());
+            println!(
+                "  • Build Tool: {} (wrapper: {})",
+                tool_str.cyan(),
+                wrapper_status
+            );
             println!("\nRun '{}' to build the project.", "djuke build".bold());
         }
+
+        Commands::Gradle(gradle_args) => match gradle_args.command {
+            GradleSubcommands::Wrapper { version } => {
+                let config = resolve_project_config(&current_dir, None, &paths);
+                let installed_jdk = resolve_jdk(&config.jdk_spec, &paths, true, cli.quiet).await?;
+                djuke_build::bootstrap_wrapper(
+                    BuildTool::Gradle,
+                    version.as_deref(),
+                    &config.project_root,
+                    &installed_jdk.java_home,
+                    &paths,
+                    cli.quiet,
+                )
+                .await?;
+            }
+        },
+
+        Commands::Maven(maven_args) => match maven_args.command {
+            MavenSubcommands::Wrapper { version } => {
+                let config = resolve_project_config(&current_dir, None, &paths);
+                let installed_jdk = resolve_jdk(&config.jdk_spec, &paths, true, cli.quiet).await?;
+                djuke_build::bootstrap_wrapper(
+                    BuildTool::Maven,
+                    version.as_deref(),
+                    &config.project_root,
+                    &installed_jdk.java_home,
+                    &paths,
+                    cli.quiet,
+                )
+                .await?;
+            }
+        },
 
         Commands::Build { args } => {
             run_task("build", args, &current_dir, &paths, cli.quiet).await?;
@@ -436,6 +534,7 @@ async fn run_task(
         task_command: &task_cmd,
         extra_args: &extra_args,
         extra_env: &config.env,
+        paths: Some(paths),
     })
     .await?;
 

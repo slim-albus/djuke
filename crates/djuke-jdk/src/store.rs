@@ -80,6 +80,7 @@ impl JdkStore {
                 .unwrap_or(21);
 
             let platform = Platform::current();
+            let effective_home = DjukePaths::effective_java_home(dir);
             Some(InstalledJdk {
                 id: folder_name.to_string(),
                 distribution: distro,
@@ -87,7 +88,7 @@ impl JdkStore {
                 major_version: major,
                 os: platform.os.to_string(),
                 arch: platform.arch.to_string(),
-                java_home: dir.to_path_buf(),
+                java_home: effective_home,
                 installed_at: Utc::now(),
             })
         } else {

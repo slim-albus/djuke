@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 djuke-core.workspace = true
 djuke-platform.workspace = true
+djuke-download.workspace = true
+djuke-archive.workspace = true
 djuke-process.workspace = true
 which.workspace = true
 tokio.workspace = true
