@@ -183,3 +183,47 @@ Run single-file Java source files directly without a build file (JEP 330) using 
 djuke run HelloWorld.java
 djuke run Script.java -- --arg1 --arg2
 ```
+
+### 14. `djuke init`
+Initialize a new Java project directly in the current directory (similar to `cargo init` or `npm init`), creating template files, sample code, wrapper, and `djuke.toml`.
+
+```bash
+# Initialize current directory with default CLI template
+djuke init
+
+# Initialize current directory as a Spring Boot app with Maven
+djuke init --template spring-boot --build-tool maven
+```
+
+### 15. `djuke dev`
+Start the application in development or live-reload mode. Auto-detects the framework:
+- **Spring Boot**: Runs `bootRun` (Gradle) or `spring-boot:run` (Maven).
+- **Quarkus**: Runs `quarkusDev` (Gradle) or `quarkus:dev` (Maven).
+- **Micronaut**: Runs `run --continuous` (Gradle) or `mn:run` (Maven).
+- **Custom**: Runs task specified under `[tasks.dev]` in `djuke.toml`.
+
+```bash
+djuke dev
+djuke dev -- --debug
+```
+
+### 16. `djuke tree`
+Display a visual Unicode tree of all project dependencies categorized by scope (`implementation`, `test`, `compileOnly`, `runtimeOnly`).
+
+```bash
+djuke tree
+```
+
+### 17. `djuke outdated`
+Inspect all declared project dependencies, query the Maven Central Solr catalog, and display a color-coded table comparing current versus latest stable versions with update classification (Major, Minor, Patch).
+
+```bash
+djuke outdated
+```
+
+### 18. `djuke audit`
+Perform a security audit of all declared project dependencies against the official **OSV.dev** (Open Source Vulnerabilities) database, reporting known CVEs, GHSA advisories, severity, and remediation links.
+
+```bash
+djuke audit
+```

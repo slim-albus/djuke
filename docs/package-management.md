@@ -30,3 +30,35 @@ djuke add org.junit.jupiter:junit-jupiter:5.10.2 --scope test
 ## Removing Dependencies (`djuke remove`)
 
 `djuke remove <query>` searches the project's build file (`pom.xml` or `build.gradle[.kts]`) and strips the matching dependency declaration cleanly while preserving surrounding formatting and other dependencies.
+
+---
+
+## Dependency Insights
+
+### Visual Dependency Tree (`djuke tree`)
+`djuke tree` parses `pom.xml` or `build.gradle(.kts)` and prints an indented Unicode tree of all dependencies grouped by scope:
+
+```text
+my-app
+├── dependencies (implementation)
+│   ├── org.springframework.boot:spring-boot-starter-web
+│   └── com.google.guava:guava:33.3.1-jre
+└── test dependencies
+    └── org.springframework.boot:spring-boot-starter-test
+```
+
+### Outdated Dependency Inspection (`djuke outdated`)
+`djuke outdated` checks every project dependency against Maven Central, comparing declared versions against the latest upstream release:
+
+| Column | Description |
+|:---|:---|
+| `DEPENDENCY` | `groupId:artifactId` |
+| `CURRENT` | Currently declared version in project build file |
+| `LATEST` | Latest stable version on Maven Central |
+| `STATUS` | `Major Update` (red), `Minor Update` (yellow), `Patch Update` (cyan), or `Up to date` (green) |
+
+### Vulnerability Security Auditing (`djuke audit`)
+`djuke audit` queries Google's **OSV.dev** Open Source Vulnerabilities database for all declared Maven dependencies.
+- Identifies known CVEs and GitHub Security Advisories (GHSA).
+- Displays vulnerability summaries, aliases (CVE-XXXX), and advisory URLs.
+- Exits with status code `1` if vulnerabilities are detected, making it ideal for CI/CD pipelines.
