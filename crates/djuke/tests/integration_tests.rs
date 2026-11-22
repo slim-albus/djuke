@@ -690,3 +690,39 @@ distribution = "corretto"
         djuke_config::JdkResolutionSource::CliFlag
     );
 }
+
+#[test]
+fn test_single_file_script_directives_and_classpath() {
+    let script_content = r#"//DEPS com.google.code.gson:gson:2.11.0, org.apache.commons:commons-lang3:3.17.0
+//JAVA 21
+//JAVA_OPTIONS --enable-preview -Xmx512m
+//FILES util/Helper.java
+
+public class MyScript {
+    public static void main(String[] args) {
+        System.out.println("Hello from djuke script runner!");
+    }
+}
+"#;
+
+    let directives = djuke_pm::ScriptDirectives::parse(script_content);
+    assert_eq!(
+        directives.dependencies,
+        vec![
+            "com.google.code.gson:gson:2.11.0",
+            "org.apache.commons:commons-lang3:3.17.0"
+        ]
+    );
+    assert_eq!(directives.java_version.as_deref(), Some("21"));
+    assert_eq!(directives.jvm_options, vec!["--enable-preview", "-Xmx512m"]);
+    assert_eq!(directives.sources, vec!["util/Helper.java"]);
+
+    let jar1 = std::path::PathBuf::from("/path/to/gson.jar");
+    let jar2 = std::path::PathBuf::from("/path/to/commons.jar");
+    let cp = djuke_pm::build_classpath(&[jar1, jar2]);
+    if cfg!(windows) {
+        assert!(cp.contains(';'));
+    } else {
+        assert!(cp.contains(':'));
+    }
+}

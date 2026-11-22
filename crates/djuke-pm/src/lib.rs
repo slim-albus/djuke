@@ -5,6 +5,7 @@ pub mod gradle_editor;
 pub mod outdated;
 pub mod parser;
 pub mod pom_editor;
+pub mod script;
 pub mod tree;
 
 pub use audit::{render_audit_report, AuditClient, VulnerabilityReport};
@@ -14,4 +15,5 @@ pub use gradle_editor::{add_gradle_dependency, remove_gradle_dependency};
 pub use outdated::{check_outdated_dependencies, render_outdated_table, OutdatedInfo, UpdateType};
 pub use parser::extract_project_dependencies;
 pub use pom_editor::{add_maven_dependency, remove_maven_dependency};
+pub use script::{build_classpath, resolve_script_dependencies, ScriptDirectives};
 pub use tree::render_dependency_tree;
