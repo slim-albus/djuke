@@ -88,7 +88,6 @@ custom = "echo hello"
     assert_eq!(resolved.tasks.get("custom").unwrap(), "echo hello");
 }
 
-
 #[tokio::test]
 async fn test_end_to_end_bare_repo_with_sdkmanrc() {
     let dir = tempdir().unwrap();
@@ -168,4 +167,102 @@ async fn test_end_to_end_mock_wrapper_execution_and_env_injection() {
     assert!(output_file.is_file());
     let recorded_java_home = fs::read_to_string(output_file).unwrap();
     assert!(recorded_java_home.contains("mock-jdk-21"));
+}
+
+#[test]
+fn test_end_to_end_scaffold_and_maven_dependency_lifecycle() {
+    use djuke_pm::{
+        add_maven_dependency, remove_maven_dependency, DependencyScope, DependencySpec,
+    };
+    use djuke_templates::{generate_project, BuildToolChoice, NewProjectOptions, TemplateType};
+
+    let dir = tempdir().unwrap();
+    let project_dir = dir.path().join("my-spring-app");
+
+    let opts = NewProjectOptions {
+        name: "my-spring-app".to_string(),
+        group_id: "com.example.springapp".to_string(),
+        template: TemplateType::SpringBoot,
+        build_tool: BuildToolChoice::Maven,
+        java_version: "21".to_string(),
+        destination: project_dir.clone(),
+    };
+
+    generate_project(&opts).unwrap();
+
+    let pom_file = project_dir.join("pom.xml");
+    assert!(pom_file.is_file());
+    assert!(project_dir.join("djuke.toml").is_file());
+
+    let initial_pom = fs::read_to_string(&pom_file).unwrap();
+    assert!(initial_pom.contains("<artifactId>my-spring-app</artifactId>"));
+
+    // Add postgresql dependency
+    let dep = DependencySpec {
+        group_id: "org.postgresql".to_string(),
+        artifact_id: "postgresql".to_string(),
+        version: Some("42.7.2".to_string()),
+        scope: DependencyScope::RuntimeOnly,
+    };
+
+    add_maven_dependency(&pom_file, &dep).unwrap();
+    let pom_after_add = fs::read_to_string(&pom_file).unwrap();
+    assert!(pom_after_add.contains("<groupId>org.postgresql</groupId>"));
+    assert!(pom_after_add.contains("<artifactId>postgresql</artifactId>"));
+    assert!(pom_after_add.contains("<version>42.7.2</version>"));
+    assert!(pom_after_add.contains("<scope>runtime</scope>"));
+
+    // Remove postgresql dependency
+    remove_maven_dependency(&pom_file, "org.postgresql", "postgresql").unwrap();
+    let pom_after_remove = fs::read_to_string(&pom_file).unwrap();
+    assert!(!pom_after_remove.contains("<groupId>org.postgresql</groupId>"));
+    assert!(!pom_after_remove.contains("<artifactId>postgresql</artifactId>"));
+}
+
+#[test]
+fn test_end_to_end_scaffold_and_gradle_kts_dependency_lifecycle() {
+    use djuke_pm::{
+        add_gradle_dependency, remove_gradle_dependency, DependencyScope, DependencySpec,
+    };
+    use djuke_templates::{generate_project, BuildToolChoice, NewProjectOptions, TemplateType};
+
+    let dir = tempdir().unwrap();
+    let project_dir = dir.path().join("my-cli-app");
+
+    let opts = NewProjectOptions {
+        name: "my-cli-app".to_string(),
+        group_id: "com.example.cliapp".to_string(),
+        template: TemplateType::Cli,
+        build_tool: BuildToolChoice::GradleKts,
+        java_version: "21".to_string(),
+        destination: project_dir.clone(),
+    };
+
+    generate_project(&opts).unwrap();
+
+    let build_file = project_dir.join("build.gradle.kts");
+    assert!(build_file.is_file());
+
+    // Add Jackson dependency
+    let dep = DependencySpec {
+        group_id: "com.fasterxml.jackson.core".to_string(),
+        artifact_id: "jackson-databind".to_string(),
+        version: Some("2.17.0".to_string()),
+        scope: DependencyScope::Implementation,
+    };
+
+    add_gradle_dependency(&build_file, &dep).unwrap();
+    let build_after_add = fs::read_to_string(&build_file).unwrap();
+    assert!(build_after_add
+        .contains("implementation(\"com.fasterxml.jackson.core:jackson-databind:2.17.0\")"));
+
+    // Remove Jackson dependency
+    remove_gradle_dependency(
+        &build_file,
+        "com.fasterxml.jackson.core",
+        "jackson-databind",
+    )
+    .unwrap();
+    let build_after_remove = fs::read_to_string(&build_file).unwrap();
+    assert!(!build_after_remove.contains("com.fasterxml.jackson.core:jackson-databind"));
 }
