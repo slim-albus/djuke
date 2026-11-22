@@ -1,6 +1,16 @@
 # djuke
 
-A prototype JDK manager, build orchestrator, and package manager for Java that uses Gradle or Maven underneath.
+A prototype JDK manager, build orchestrator, and package manager for Java.
+
+---
+
+## Features
+
+- **Build Tool Orchestration**: Uses Gradle or Maven underneath, automatically managing wrappers and delegating build tasks.
+- **JDK Management**: Installs and switches between OpenJDK distributions (OpenJDK, Temurin, Corretto, Zulu, GraalVM, and others).
+- **Project Detection**: Detects Java versions and build settings from `pom.xml`, `build.gradle`, `build.gradle.kts`, `.java-version`, and `.sdkmanrc`.
+- **Single-File Scripts**: Runs `.java` files directly with inline dependencies (`//DEPS`).
+- **Package Operations**: Adds, removes, inspects, and audits dependencies across Maven and Gradle project files.
 
 ---
 
