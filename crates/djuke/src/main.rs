@@ -786,6 +786,16 @@ async fn main() -> Result<()> {
 
             djuke_templates::generate_project(&opts)?;
 
+            match b_tool {
+                djuke_templates::BuildToolChoice::GradleKts
+                | djuke_templates::BuildToolChoice::GradleGroovy => {
+                    let _ = djuke_build::create_gradle_wrapper(&dest, None);
+                }
+                djuke_templates::BuildToolChoice::Maven => {
+                    let _ = djuke_build::create_maven_wrapper(&dest, None);
+                }
+            }
+
             println!("{}", "✔ Project initialized successfully!".green().bold());
             println!("\nNext steps:");
             println!("  cd {}", proj_name.bold());
@@ -836,6 +846,16 @@ async fn main() -> Result<()> {
             };
 
             djuke_templates::generate_project(&opts)?;
+
+            match b_tool {
+                djuke_templates::BuildToolChoice::GradleKts
+                | djuke_templates::BuildToolChoice::GradleGroovy => {
+                    let _ = djuke_build::create_gradle_wrapper(&current_dir, None);
+                }
+                djuke_templates::BuildToolChoice::Maven => {
+                    let _ = djuke_build::create_maven_wrapper(&current_dir, None);
+                }
+            }
 
             println!("{}", "✔ Project initialized successfully!".green().bold());
             println!("\nNext steps:");
@@ -1267,16 +1287,13 @@ async fn main() -> Result<()> {
                     Some(BuildTool::Gradle),
                     &paths,
                 );
-                let installed_jdk = resolve_jdk(&config.jdk_spec, &paths, true, cli.quiet).await?;
-                djuke_build::bootstrap_wrapper(
-                    BuildTool::Gradle,
-                    version.as_deref(),
-                    &config.project_root,
-                    &installed_jdk.java_home,
-                    &paths,
-                    cli.quiet,
-                )
-                .await?;
+                djuke_build::create_gradle_wrapper(&config.project_root, version.as_deref())?;
+                if !cli.quiet {
+                    println!(
+                        "{}",
+                        "✔ Gradle wrapper created successfully.".green().bold()
+                    );
+                }
             }
             Some(GradleSubcommands::Stop) => {
                 run_raw_tool(
@@ -1329,16 +1346,10 @@ async fn main() -> Result<()> {
                     Some(BuildTool::Maven),
                     &paths,
                 );
-                let installed_jdk = resolve_jdk(&config.jdk_spec, &paths, true, cli.quiet).await?;
-                djuke_build::bootstrap_wrapper(
-                    BuildTool::Maven,
-                    version.as_deref(),
-                    &config.project_root,
-                    &installed_jdk.java_home,
-                    &paths,
-                    cli.quiet,
-                )
-                .await?;
+                djuke_build::create_maven_wrapper(&config.project_root, version.as_deref())?;
+                if !cli.quiet {
+                    println!("{}", "✔ Maven wrapper created successfully.".green().bold());
+                }
             }
             None => {
                 if maven_args.args.is_empty() {
