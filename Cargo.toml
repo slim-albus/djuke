@@ -11,6 +11,9 @@ members = [
     "crates/djuke-build",
     "crates/djuke-process",
     "crates/djuke-doctor",
+    "crates/djuke-templates",
+    "crates/djuke-pm",
+    "crates/djuke-cache",
 ]
 
 [workspace.package]
@@ -32,6 +35,9 @@ djuke-jdk = { path = "crates/djuke-jdk" }
 djuke-build = { path = "crates/djuke-build" }
 djuke-process = { path = "crates/djuke-process" }
 djuke-doctor = { path = "crates/djuke-doctor" }
+djuke-templates = { path = "crates/djuke-templates" }
+djuke-pm = { path = "crates/djuke-pm" }
+djuke-cache = { path = "crates/djuke-cache" }
 
 # Async & Networking
 tokio = { version = "1.40", features = ["full"] }
@@ -45,6 +51,7 @@ toml = "0.8"
 
 # CLI & Terminal UX
 clap = { version = "4.5", features = ["derive", "env", "cargo"] }
+clap_complete = "4.5"
 indicatif = "0.17"
 colored = "2.1"
 console = "0.15"

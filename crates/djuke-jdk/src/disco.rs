@@ -53,6 +53,7 @@ impl Default for DiscoClient {
     fn default() -> Self {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
+            .user_agent("djuke/0.1.0")
             .build()
             .unwrap_or_default();
         Self { client }
