@@ -1,4 +1,4 @@
-name: Build & Package
+name: Release
 
 on:
   push:
@@ -10,8 +10,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  verify-main:
+    name: Verify Tag on Main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check that tag is on main branch
+        if: github.event_name == 'push'
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor ${{ github.sha }} origin/main; then
+            echo "Error: Tag commit ${{ github.sha }} is not on the main branch. Releases must be tagged on main."
+            exit 1
+          fi
+          echo "Verified: Tag commit ${{ github.sha }} is an ancestor of main."
+
   build-windows:
     name: Build & Package (Windows x86_64)
+    needs: verify-main
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -36,6 +56,7 @@ jobs:
           New-Item -ItemType Directory -Path dist | Out-Null
           Copy-Item target/release/djuke.exe dist/
           Copy-Item README.md dist/ -ErrorAction SilentlyContinue
+          Copy-Item LICENSE dist/ -ErrorAction SilentlyContinue
           Compress-Archive -Path dist/* -DestinationPath djuke-windows-x86_64.zip
           $hash = (Get-FileHash -Algorithm SHA256 djuke-windows-x86_64.zip).Hash.ToLower()
           "$hash  djuke-windows-x86_64.zip" | Out-File -Encoding utf8 djuke-windows-x86_64.zip.sha256
@@ -47,20 +68,10 @@ jobs:
           path: |
             djuke-windows-x86_64.zip
             djuke-windows-x86_64.zip.sha256
-            target/release/djuke.exe
-
-      - name: Release Assets (Tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            djuke-windows-x86_64.zip
-            djuke-windows-x86_64.zip.sha256
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-unix:
     name: Build & Package (${{ matrix.name }})
+    needs: verify-main
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -74,6 +85,10 @@ jobs:
             target: aarch64-apple-darwin
             os: macos-latest
             artifact_name: djuke-macos-aarch64.tar.gz
+          - name: macOS x86_64
+            target: x86_64-apple-darwin
+            os: macos-13
+            artifact_name: djuke-macos-x86_64.tar.gz
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -96,6 +111,7 @@ jobs:
           mkdir dist
           cp target/${{ matrix.target }}/release/djuke dist/
           cp README.md dist/ 2>/dev/null || true
+          cp LICENSE dist/ 2>/dev/null || true
           tar -czvf ${{ matrix.artifact_name }} -C dist .
           shasum -a 256 ${{ matrix.artifact_name }} > "${{ matrix.artifact_name }}.sha256"
 
@@ -107,12 +123,27 @@ jobs:
             ${{ matrix.artifact_name }}
             ${{ matrix.artifact_name }}.sha256
 
-      - name: Release Assets (Tags only)
+  publish:
+    name: Publish Release
+    needs: [build-windows, build-unix]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -la release-assets
+
+      - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ${{ matrix.artifact_name }}
-            ${{ matrix.artifact_name }}.sha256
+          files: release-assets/*
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

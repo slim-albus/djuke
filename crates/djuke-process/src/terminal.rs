@@ -1,4 +1,5 @@
 use std::io::{self, Write};
+#[cfg(windows)]
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 #[cfg(windows)]
@@ -27,10 +28,15 @@ mod win32 {
     }
 }
 
+#[cfg(windows)]
 static HAS_SAVED_MODES: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
 static SAVED_IN_MODE: AtomicU32 = AtomicU32::new(0);
+#[cfg(windows)]
 static SAVED_OUT_MODE: AtomicU32 = AtomicU32::new(0);
+#[cfg(windows)]
 static SAVED_ERR_MODE: AtomicU32 = AtomicU32::new(0);
+#[cfg(windows)]
 static HANDLER_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(windows)]

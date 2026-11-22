@@ -3,13 +3,12 @@ name: CI
 on:
   push:
     branches:
-      - main
       - dev
-      - 'feature/**'
+      - main
   pull_request:
     branches:
-      - main
       - dev
+      - main
 
 env:
   CARGO_TERM_COLOR: always
