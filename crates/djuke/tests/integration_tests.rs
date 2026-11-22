@@ -190,6 +190,7 @@ async fn test_end_to_end_scaffold_and_maven_dependency_lifecycle() {
         framework_version: None,
         initializr_dependencies: None,
         skip_initializr: true,
+        test_framework: djuke_templates::TestFramework::JUnit5,
     };
 
     generate_project(&opts).await.unwrap();
@@ -244,6 +245,7 @@ async fn test_end_to_end_scaffold_and_gradle_kts_dependency_lifecycle() {
         framework_version: None,
         initializr_dependencies: None,
         skip_initializr: true,
+        test_framework: djuke_templates::TestFramework::JUnit5,
     };
 
     generate_project(&opts).await.unwrap();
@@ -294,6 +296,7 @@ async fn test_end_to_end_project_init_in_place_and_dependency_tree() {
         framework_version: None,
         initializr_dependencies: None,
         skip_initializr: true,
+        test_framework: djuke_templates::TestFramework::JUnit5,
     };
 
     generate_project(&opts).await.unwrap();
@@ -418,6 +421,7 @@ async fn test_template_generation_with_custom_distro_and_latest_java() {
         framework_version: None,
         initializr_dependencies: None,
         skip_initializr: true,
+        test_framework: djuke_templates::TestFramework::JUnit5,
     };
 
     generate_project(&opts).await.unwrap();
@@ -558,6 +562,7 @@ async fn test_template_generation_with_custom_dynamic_framework_version() {
         framework_version: Some("3.5.3".to_string()),
         initializr_dependencies: None,
         skip_initializr: true,
+        test_framework: djuke_templates::TestFramework::JUnit5,
     };
 
     generate_project(&opts).await.unwrap();
@@ -587,6 +592,7 @@ async fn test_new_industry_templates_and_enterprise_configs() {
         framework_version: None,
         initializr_dependencies: None,
         skip_initializr: true,
+        test_framework: djuke_templates::TestFramework::JUnit5,
     };
     generate_project(&javalin_opts).await.unwrap();
     assert!(javalin_dir.join(".editorconfig").is_file());
@@ -608,6 +614,7 @@ async fn test_new_industry_templates_and_enterprise_configs() {
         framework_version: None,
         initializr_dependencies: None,
         skip_initializr: true,
+        test_framework: djuke_templates::TestFramework::JUnit5,
     };
     generate_project(&picocli_opts).await.unwrap();
     let pom = fs::read_to_string(picocli_dir.join("pom.xml")).unwrap();
@@ -626,6 +633,7 @@ async fn test_new_industry_templates_and_enterprise_configs() {
         framework_version: None,
         initializr_dependencies: None,
         skip_initializr: true,
+        test_framework: djuke_templates::TestFramework::JUnit5,
     };
     generate_project(&mm_opts).await.unwrap();
     assert!(mm_dir.join("settings.gradle.kts").is_file());

@@ -6,6 +6,8 @@ use tokio::process::Command;
 
 use djuke_core::{DjukeError, Result};
 
+use crate::terminal::{restore_terminal_state, TerminalGuard};
+
 #[derive(Debug, Clone)]
 pub struct CommandContext {
     pub java_home: PathBuf,
@@ -21,6 +23,9 @@ impl ProcessRunner {
         args: &[&str],
         ctx: &CommandContext,
     ) -> Result<ExitStatus> {
+        // 0. Acquire terminal guard to ensure console mode and cursor are always restored cleanly
+        let _guard = TerminalGuard::acquire();
+
         let mut cmd = Command::new(program);
         cmd.args(args);
         cmd.current_dir(&ctx.working_dir);
@@ -52,11 +57,21 @@ impl ProcessRunner {
             ))
         })?;
 
-        let status = child
-            .wait()
-            .await
-            .map_err(|e| DjukeError::Process(format!("Process error: {}", e)))?;
+        // 4. Await process completion OR intercept Ctrl+C signal safely
+        let status = tokio::select! {
+            res = child.wait() => {
+                res.map_err(|e| DjukeError::Process(format!("Process error: {}", e)))?
+            }
+            _ = tokio::signal::ctrl_c() => {
+                // Intercept Ctrl+C gracefully: kill spawned child, restore terminal modes, return error
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                restore_terminal_state();
+                return Err(DjukeError::Process("Process interrupted by user (Ctrl+C)".into()));
+            }
+        };
 
+        restore_terminal_state();
         Ok(status)
     }
 }

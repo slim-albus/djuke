@@ -3,7 +3,7 @@ use std::path::Path;
 
 use djuke_core::Result;
 
-use crate::model::{BuildToolChoice, NewProjectOptions, TemplateType};
+use crate::model::{BuildToolChoice, NewProjectOptions, TemplateType, TestFramework};
 
 pub async fn generate_project(opts: &NewProjectOptions) -> Result<()> {
     let dest = &opts.destination;
@@ -227,6 +227,90 @@ mvnw text eol=lf
     Ok(())
 }
 
+fn generate_test_source(test: &Path, class_name: &str, opts: &NewProjectOptions) -> Result<()> {
+    if opts.test_framework == TestFramework::None {
+        return Ok(());
+    }
+
+    match opts.test_framework {
+        TestFramework::JUnit5 => {
+            let test_java = format!(
+                r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class {}Test {{
+    @Test
+    void testAppSanity() {{
+        assertTrue(true, "sanity test passed");
+    }}
+}}
+"#,
+                opts.group_id, class_name
+            );
+            fs::write(test.join(format!("{}Test.java", class_name)), test_java)?;
+        }
+        TestFramework::AssertJ => {
+            let test_java = format!(
+                r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class {}Test {{
+    @Test
+    void testAppSanity() {{
+        assertThat(1 + 1).isEqualTo(2);
+    }}
+}}
+"#,
+                opts.group_id, class_name
+            );
+            fs::write(test.join(format!("{}Test.java", class_name)), test_java)?;
+        }
+        TestFramework::TestNG => {
+            let test_java = format!(
+                r#"package {};
+
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+public class {}Test {{
+    @Test
+    public void testAppSanity() {{
+        Assert.assertEquals(1 + 1, 2);
+    }}
+}}
+"#,
+                opts.group_id, class_name
+            );
+            fs::write(test.join(format!("{}Test.java", class_name)), test_java)?;
+        }
+        TestFramework::Spock => {
+            let test_java = format!(
+                r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class {}Test {{
+    @Test
+    void testAppSanity() {{
+        assertTrue(true);
+    }}
+}}
+"#,
+                opts.group_id, class_name
+            );
+            fs::write(test.join(format!("{}Test.java", class_name)), test_java)?;
+        }
+        TestFramework::None => {}
+    }
+
+    Ok(())
+}
+
 fn generate_cli_source(main: &Path, test: &Path, opts: &NewProjectOptions) -> Result<()> {
     let app_java = format!(
         r#"package {};
@@ -244,24 +328,7 @@ public class App {{
         opts.group_id, opts.name
     );
     fs::write(main.join("App.java"), app_java)?;
-
-    let test_java = format!(
-        r#"package {};
-
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
-
-class AppTest {{
-    @Test
-    void appHasAGreeting() {{
-        App classUnderTest = new App();
-        assertNotNull(classUnderTest.getGreeting(), "app should have a greeting");
-    }}
-}}
-"#,
-        opts.group_id
-    );
-    fs::write(test.join("AppTest.java"), test_java)?;
+    generate_test_source(test, "App", opts)?;
     Ok(())
 }
 
@@ -278,24 +345,7 @@ public class Library {{
         opts.group_id
     );
     fs::write(main.join("Library.java"), lib_java)?;
-
-    let test_java = format!(
-        r#"package {};
-
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
-
-class LibraryTest {{
-    @Test
-    void someLibraryMethodReturnsTrue() {{
-        Library classUnderTest = new Library();
-        assertTrue(classUnderTest.someLibraryMethod(), "someLibraryMethod should return 'true'");
-    }}
-}}
-"#,
-        opts.group_id
-    );
-    fs::write(test.join("LibraryTest.java"), test_java)?;
+    generate_test_source(test, "Library", opts)?;
     Ok(())
 }
 
@@ -1101,10 +1151,123 @@ djuke run
 }
 
 fn effective_java_version(v: &str) -> &str {
-    if v.eq_ignore_ascii_case("latest") || v.eq_ignore_ascii_case("lts") {
+    let trimmed = v.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("lts") {
+        "21"
+    } else if trimmed.eq_ignore_ascii_case("latest") {
         "25"
     } else {
-        v
+        trimmed
+    }
+}
+
+fn test_dependencies_gradle_kts(tf: TestFramework) -> &'static str {
+    match tf {
+        TestFramework::JUnit5 => {
+            "    testImplementation(platform(\"org.junit:junit-bom:5.11.4\"))\n    testImplementation(\"org.junit.jupiter:junit-jupiter\")\n    testRuntimeOnly(\"org.junit.platform:junit-platform-launcher\")"
+        }
+        TestFramework::AssertJ => {
+            "    testImplementation(platform(\"org.junit:junit-bom:5.11.4\"))\n    testImplementation(\"org.junit.jupiter:junit-jupiter\")\n    testImplementation(\"org.assertj:assertj-core:3.27.3\")\n    testRuntimeOnly(\"org.junit.platform:junit-platform-launcher\")"
+        }
+        TestFramework::Spock => {
+            "    testImplementation(\"org.spockframework:spock-core:2.4-M5-groovy-4.0\")\n    testImplementation(\"org.apache.groovy:groovy:4.0.24\")"
+        }
+        TestFramework::TestNG => {
+            "    testImplementation(\"org.testng:testng:7.10.2\")"
+        }
+        TestFramework::None => "",
+    }
+}
+
+fn test_task_gradle_kts(tf: TestFramework) -> &'static str {
+    match tf {
+        TestFramework::JUnit5 | TestFramework::AssertJ | TestFramework::Spock => {
+            "tasks.withType<Test> {\n    useJUnitPlatform()\n    testLogging {\n        events(\"passed\", \"skipped\", \"failed\")\n    }\n}"
+        }
+        TestFramework::TestNG => {
+            "tasks.withType<Test> {\n    useTestNG()\n    testLogging {\n        events(\"passed\", \"skipped\", \"failed\")\n    }\n}"
+        }
+        TestFramework::None => "tasks.withType<Test> {\n    enabled = false\n}",
+    }
+}
+
+fn test_dependencies_gradle_groovy(tf: TestFramework) -> &'static str {
+    match tf {
+        TestFramework::JUnit5 => {
+            "    testImplementation platform('org.junit:junit-bom:5.11.4')\n    testImplementation 'org.junit.jupiter:junit-jupiter'\n    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"
+        }
+        TestFramework::AssertJ => {
+            "    testImplementation platform('org.junit:junit-bom:5.11.4')\n    testImplementation 'org.junit.jupiter:junit-jupiter'\n    testImplementation 'org.assertj:assertj-core:3.27.3'\n    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"
+        }
+        TestFramework::Spock => {
+            "    testImplementation 'org.spockframework:spock-core:2.4-M5-groovy-4.0'\n    testImplementation 'org.apache.groovy:groovy:4.0.24'"
+        }
+        TestFramework::TestNG => {
+            "    testImplementation 'org.testng:testng:7.10.2'"
+        }
+        TestFramework::None => "",
+    }
+}
+
+fn test_task_gradle_groovy(tf: TestFramework) -> &'static str {
+    match tf {
+        TestFramework::JUnit5 | TestFramework::AssertJ | TestFramework::Spock => {
+            "tasks.withType(Test).configureEach {\n    useJUnitPlatform()\n    testLogging {\n        events('passed', 'skipped', 'failed')\n    }\n}"
+        }
+        TestFramework::TestNG => {
+            "tasks.withType(Test).configureEach {\n    useTestNG()\n    testLogging {\n        events('passed', 'skipped', 'failed')\n    }\n}"
+        }
+        TestFramework::None => "tasks.withType(Test).configureEach {\n    enabled = false\n}",
+    }
+}
+
+fn test_dependencies_maven(tf: TestFramework) -> &'static str {
+    match tf {
+        TestFramework::JUnit5 => {
+            r#"        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>"#
+        }
+        TestFramework::AssertJ => {
+            r#"        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.3</version>
+            <scope>test</scope>
+        </dependency>"#
+        }
+        TestFramework::Spock => {
+            r#"        <dependency>
+            <groupId>org.spockframework</groupId>
+            <artifactId>spock-core</artifactId>
+            <version>2.4-M5-groovy-4.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.groovy</groupId>
+            <artifactId>groovy</artifactId>
+            <version>4.0.24</version>
+            <scope>test</scope>
+        </dependency>"#
+        }
+        TestFramework::TestNG => {
+            r#"        <dependency>
+            <groupId>org.testng</groupId>
+            <artifactId>testng</artifactId>
+            <version>7.10.2</version>
+            <scope>test</scope>
+        </dependency>"#
+        }
+        TestFramework::None => "",
     }
 }
 
@@ -1113,29 +1276,33 @@ fn generate_gradle_kts(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     fs::write(dest.join("settings.gradle.kts"), settings)?;
 
     let j_ver = effective_java_version(&opts.java_version);
+    let test_deps = test_dependencies_gradle_kts(opts.test_framework);
+    let test_cfg = test_task_gradle_kts(opts.test_framework);
+
     let (plugins, deps) = match opts.template {
         TemplateType::Cli => (
             "    application\n    `java-library`".to_string(),
             format!(
-                r#"    testImplementation(platform("org.junit:junit-bom:5.11.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+                r#"{}
 
 application {{
     mainClass.set("{}.App")
 }}"#,
-                opts.group_id
+                test_deps, opts.group_id
             ),
         ),
         TemplateType::Lib => (
             "    `java-library`\n    `maven-publish`".to_string(),
-            r#"    testImplementation(platform("org.junit:junit-bom:5.11.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")"#
-                .to_string(),
+            test_deps.to_string(),
         ),
         TemplateType::SpringBoot => {
             let sb_ver = opts.framework_version.as_deref().unwrap_or("3.4.0");
+            let sb_test = if opts.test_framework != TestFramework::None {
+                r#"    testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")"#
+            } else {
+                ""
+            };
             (
                 format!(
                     r#"    java
@@ -1143,15 +1310,22 @@ application {{
     id("io.spring.dependency-management") version "1.1.6""#,
                     sb_ver
                 ),
-                r#"    implementation("org.springframework.boot:spring-boot-starter-web")
+                format!(
+                    r#"    implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")"#
-                    .to_string(),
+{}"#,
+                    sb_test
+                ),
             )
         }
         TemplateType::Quarkus => {
             let q_ver = opts.framework_version.as_deref().unwrap_or("3.15.1");
+            let q_test = if opts.test_framework != TestFramework::None {
+                r#"    testImplementation("io.quarkus:quarkus-junit5")
+    testImplementation("io.rest-assured:rest-assured")"#
+            } else {
+                ""
+            };
             (
                 format!(
                     r#"    java
@@ -1161,25 +1335,31 @@ application {{
                 format!(
                     r#"    implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:{}"))
     implementation("io.quarkus:quarkus-resteasy-reactive")
-    testImplementation("io.quarkus:quarkus-junit5")
-    testImplementation("io.rest-assured:rest-assured")"#,
-                    q_ver
+{}"#,
+                    q_ver, q_test
                 ),
             )
         }
         TemplateType::Micronaut => {
             let mn_ver = opts.framework_version.as_deref().unwrap_or("4.4.2");
+            let mn_test = if opts.test_framework != TestFramework::None {
+                r#"    testImplementation("io.micronaut.test:micronaut-test-junit5")"#
+            } else {
+                ""
+            };
             (
                 format!(
                     r#"    java
     id("io.micronaut.application") version "{}"#,
                     mn_ver
                 ),
-                r#"    annotationProcessor("io.micronaut:micronaut-inject-java")
+                format!(
+                    r#"    annotationProcessor("io.micronaut:micronaut-inject-java")
     implementation("io.micronaut:micronaut-http-server-netty")
     runtimeOnly("ch.qos.logback:logback-classic")
-    testImplementation("io.micronaut.test:micronaut-test-junit5")"#
-                    .to_string(),
+{}"#,
+                    mn_test
+                ),
             )
         }
         TemplateType::Javalin => (
@@ -1188,14 +1368,12 @@ application {{
                 r#"    implementation("io.javalin:javalin:6.3.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2")
     implementation("ch.qos.logback:logback-classic:1.5.16")
-    testImplementation(platform("org.junit:junit-bom:5.11.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+{}
 
 application {{
     mainClass.set("{}.App")
 }}"#,
-                opts.group_id
+                test_deps, opts.group_id
             ),
         ),
         TemplateType::Grpc => (
@@ -1206,14 +1384,12 @@ application {{
     implementation("io.grpc:grpc-stub:1.69.0")
     compileOnly("javax.annotation:javax.annotation-api:1.3.2")
     implementation("ch.qos.logback:logback-classic:1.5.16")
-    testImplementation(platform("org.junit:junit-bom:5.11.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+{}
 
 application {{
     mainClass.set("{}.App")
 }}"#,
-                opts.group_id
+                test_deps, opts.group_id
             ),
         ),
         TemplateType::Picocli => (
@@ -1221,14 +1397,12 @@ application {{
             format!(
                 r#"    implementation("info.picocli:picocli:4.7.6")
     annotationProcessor("info.picocli:picocli-codegen:4.7.6")
-    testImplementation(platform("org.junit:junit-bom:5.11.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+{}
 
 application {{
     mainClass.set("{}.App")
 }}"#,
-                opts.group_id
+                test_deps, opts.group_id
             ),
         ),
         TemplateType::MultiModule => unreachable!(),
@@ -1252,15 +1426,26 @@ java {{
     }}
 }}
 
+tasks.withType<JavaCompile> {{
+    options.encoding = "UTF-8"
+    options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all"))
+}}
+
+tasks.withType<Jar> {{
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {{
+        attributes["Implementation-Title"] = project.name
+        attributes["Implementation-Version"] = project.version
+    }}
+}}
+
 dependencies {{
 {}
 }}
 
-tasks.named<Test>("test") {{
-    useJUnitPlatform()
-}}
+{}
 "#,
-        plugins, opts.group_id, j_ver, deps
+        plugins, opts.group_id, j_ver, deps, test_cfg
     );
 
     fs::write(dest.join("build.gradle.kts"), build)?;
@@ -1272,7 +1457,7 @@ tasks.named<Test>("test") {{
         "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8"
     };
     let props = format!(
-        "{}\norg.gradle.parallel=true\norg.gradle.caching=true\n",
+        "{}\norg.gradle.parallel=true\norg.gradle.caching=true\norg.gradle.configuration-cache=true\n",
         jvmargs
     );
     let _ = fs::write(dest.join("gradle.properties"), props);
@@ -1285,33 +1470,33 @@ fn generate_gradle_groovy(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     fs::write(dest.join("settings.gradle"), settings)?;
 
     let j_ver = effective_java_version(&opts.java_version);
+    let test_deps = test_dependencies_gradle_groovy(opts.test_framework);
+    let test_cfg = test_task_gradle_groovy(opts.test_framework);
+
     let deps = match opts.template {
-        TemplateType::Javalin => r#"    implementation 'io.javalin:javalin:6.3.0'
+        TemplateType::Javalin => format!(
+            r#"    implementation 'io.javalin:javalin:6.3.0'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
     implementation 'ch.qos.logback:logback-classic:1.5.16'
-    testImplementation platform('org.junit:junit-bom:5.11.4')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"#
-            .to_string(),
-        TemplateType::Picocli => r#"    implementation 'info.picocli:picocli:4.7.6'
+{}"#,
+            test_deps
+        ),
+        TemplateType::Picocli => format!(
+            r#"    implementation 'info.picocli:picocli:4.7.6'
     annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
-    testImplementation platform('org.junit:junit-bom:5.11.4')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"#
-            .to_string(),
-        TemplateType::Grpc => r#"    implementation 'io.grpc:grpc-netty-shaded:1.69.0'
+{}"#,
+            test_deps
+        ),
+        TemplateType::Grpc => format!(
+            r#"    implementation 'io.grpc:grpc-netty-shaded:1.69.0'
     implementation 'io.grpc:grpc-protobuf:1.69.0'
     implementation 'io.grpc:grpc-stub:1.69.0'
     compileOnly 'javax.annotation:javax.annotation-api:1.3.2'
     implementation 'ch.qos.logback:logback-classic:1.5.16'
-    testImplementation platform('org.junit:junit-bom:5.11.4')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"#
-            .to_string(),
-        _ => r#"    testImplementation platform('org.junit:junit-bom:5.11.4')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"#
-            .to_string(),
+{}"#,
+            test_deps
+        ),
+        _ => test_deps.to_string(),
     };
 
     let build = format!(
@@ -1333,6 +1518,18 @@ java {{
     }}
 }}
 
+tasks.withType(JavaCompile).configureEach {{
+    options.encoding = 'UTF-8'
+    options.compilerArgs.addAll(['-parameters', '-Xlint:all'])
+}}
+
+tasks.withType(Jar).configureEach {{
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {{
+        attributes('Implementation-Title': project.name, 'Implementation-Version': project.version)
+    }}
+}}
+
 dependencies {{
 {}
 }}
@@ -1341,11 +1538,9 @@ application {{
     mainClass = '{}.App'
 }}
 
-test {{
-    useJUnitPlatform()
-}}
+{}
 "#,
-        opts.group_id, j_ver, deps, opts.group_id
+        opts.group_id, j_ver, deps, opts.group_id, test_cfg
     );
 
     fs::write(dest.join("build.gradle"), build)?;
@@ -1357,7 +1552,7 @@ test {{
         "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8"
     };
     let props = format!(
-        "{}\norg.gradle.parallel=true\norg.gradle.caching=true\n",
+        "{}\norg.gradle.parallel=true\norg.gradle.caching=true\norg.gradle.configuration-cache=true\n",
         jvmargs
     );
     let _ = fs::write(dest.join("gradle.properties"), props);
@@ -1367,9 +1562,20 @@ test {{
 
 fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let j_ver = effective_java_version(&opts.java_version);
+    let test_deps = test_dependencies_maven(opts.test_framework);
+
     let pom = match opts.template {
         TemplateType::SpringBoot => {
             let sb_ver = opts.framework_version.as_deref().unwrap_or("3.4.0");
+            let sb_test = if opts.test_framework != TestFramework::None {
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>"#
+            } else {
+                ""
+            };
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -1390,6 +1596,8 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
 
     <properties>
         <java.version>{}</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
     <dependencies>
@@ -1401,28 +1609,54 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
+{}
     </dependencies>
 
     <build>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.0</version>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                        <arg>-Xlint:all</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
             </plugin>
         </plugins>
     </build>
 </project>
 "#,
-                sb_ver, opts.group_id, opts.name, j_ver
+                sb_ver, opts.group_id, opts.name, j_ver, sb_test
             )
         }
         TemplateType::Quarkus => {
             let q_ver = opts.framework_version.as_deref().unwrap_or("3.15.1");
+            let q_test = if opts.test_framework != TestFramework::None {
+                r#"        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>"#
+            } else {
+                ""
+            };
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -1437,6 +1671,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     <properties>
         <maven.compiler.release>{}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.version>{}</quarkus.platform.version>
     </properties>
 
@@ -1457,16 +1692,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-resteasy-reactive</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.rest-assured</groupId>
-            <artifactId>rest-assured</artifactId>
-            <scope>test</scope>
-        </dependency>
+{}
     </dependencies>
 
     <build>
@@ -1477,15 +1703,40 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <version>${{quarkus.platform.version}}</version>
                 <extensions>true</extensions>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.0</version>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                        <arg>-Xlint:all</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
         </plugins>
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, j_ver, q_ver
+                opts.group_id, opts.name, j_ver, q_ver, q_test
             )
         }
         TemplateType::Micronaut => {
             let mn_ver = opts.framework_version.as_deref().unwrap_or("4.4.2");
+            let mn_test = if opts.test_framework != TestFramework::None {
+                r#"        <dependency>
+            <groupId>io.micronaut.test</groupId>
+            <artifactId>micronaut-test-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>"#
+            } else {
+                ""
+            };
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -1506,6 +1757,8 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     <properties>
         <jdk.version>{}</jdk.version>
         <release.version>{}</release.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
     <dependencies>
@@ -1513,11 +1766,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
             <groupId>io.micronaut</groupId>
             <artifactId>micronaut-http-server-netty</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.micronaut.test</groupId>
-            <artifactId>micronaut-test-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
+{}
     </dependencies>
 
     <build>
@@ -1526,11 +1775,27 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <groupId>io.micronaut.maven</groupId>
                 <artifactId>micronaut-maven-plugin</artifactId>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.0</version>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                        <arg>-Xlint:all</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
         </plugins>
     </build>
 </project>
 "#,
-                mn_ver, opts.group_id, opts.name, j_ver, j_ver
+                mn_ver, opts.group_id, opts.name, j_ver, j_ver, mn_test
             )
         }
         TemplateType::Javalin => {
@@ -1556,6 +1821,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     <properties>
 {}
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <junit.version>5.11.4</junit.version>
     </properties>
 
@@ -1575,12 +1841,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
             <artifactId>logback-classic</artifactId>
             <version>1.5.16</version>
         </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${{junit.version}}</version>
-            <scope>test</scope>
-        </dependency>
+{}
     </dependencies>
 
     <build>
@@ -1589,11 +1850,22 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.14.0</version>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                        <arg>-Xlint:all</arg>
+                    </compilerArgs>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
@@ -1607,7 +1879,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, compiler_prop, opts.group_id
+                opts.group_id, opts.name, compiler_prop, test_deps, opts.group_id
             )
         }
         TemplateType::Picocli => {
@@ -1633,6 +1905,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     <properties>
 {}
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <junit.version>5.11.4</junit.version>
     </properties>
 
@@ -1642,12 +1915,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
             <artifactId>picocli</artifactId>
             <version>4.7.6</version>
         </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${{junit.version}}</version>
-            <scope>test</scope>
-        </dependency>
+{}
     </dependencies>
 
     <build>
@@ -1657,6 +1925,10 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.14.0</version>
                 <configuration>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                        <arg>-Xlint:all</arg>
+                    </compilerArgs>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>info.picocli</groupId>
@@ -1672,6 +1944,11 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <version>3.5.2</version>
             </plugin>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+            </plugin>
+            <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.5.0</version>
@@ -1683,7 +1960,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, compiler_prop, opts.group_id
+                opts.group_id, opts.name, compiler_prop, test_deps, opts.group_id
             )
         }
         TemplateType::Grpc => {
@@ -1709,6 +1986,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     <properties>
 {}
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <junit.version>5.11.4</junit.version>
     </properties>
 
@@ -1739,12 +2017,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
             <artifactId>logback-classic</artifactId>
             <version>1.5.16</version>
         </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${{junit.version}}</version>
-            <scope>test</scope>
-        </dependency>
+{}
     </dependencies>
 
     <build>
@@ -1753,11 +2026,22 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.14.0</version>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                        <arg>-Xlint:all</arg>
+                    </compilerArgs>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
@@ -1771,7 +2055,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, compiler_prop, opts.group_id
+                opts.group_id, opts.name, compiler_prop, test_deps, opts.group_id
             )
         }
         _ => {
@@ -1819,12 +2103,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </properties>
 
     <dependencies>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${{junit.version}}</version>
-            <scope>test</scope>
-        </dependency>
+{}
     </dependencies>
 
     <build>
@@ -1833,18 +2112,29 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.14.0</version>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                        <arg>-Xlint:all</arg>
+                    </compilerArgs>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+            </plugin>
 {}
         </plugins>
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, compiler_prop, extra_plugin
+                opts.group_id, opts.name, compiler_prop, test_deps, extra_plugin
             )
         }
     };
@@ -1872,6 +2162,7 @@ mod tests {
             framework_version: None,
             initializr_dependencies: None,
             skip_initializr: true,
+            test_framework: TestFramework::JUnit5,
         };
 
         generate_project(&opts).await.unwrap();
@@ -1888,6 +2179,11 @@ mod tests {
             .path()
             .join("src/test/java/com/example/test/AppTest.java")
             .is_file());
+        let kts = fs::read_to_string(dir.path().join("build.gradle.kts")).unwrap();
+        assert!(kts.contains("-parameters"));
+        assert!(kts.contains("-Xlint:all"));
+        assert!(kts.contains("duplicatesStrategy = DuplicatesStrategy.EXCLUDE"));
+        assert!(kts.contains("useJUnitPlatform()"));
     }
 
     #[tokio::test]
@@ -1904,6 +2200,7 @@ mod tests {
             framework_version: None,
             initializr_dependencies: None,
             skip_initializr: true,
+            test_framework: TestFramework::JUnit5,
         };
 
         generate_project(&opts).await.unwrap();
@@ -1927,6 +2224,7 @@ mod tests {
             framework_version: None,
             initializr_dependencies: None,
             skip_initializr: true,
+            test_framework: TestFramework::JUnit5,
         };
 
         generate_project(&opts).await.unwrap();
@@ -1934,6 +2232,9 @@ mod tests {
         let pom = fs::read_to_string(dir.path().join("pom.xml")).unwrap();
         assert!(pom.contains("picocli"));
         assert!(pom.contains("picocli-codegen"));
+        assert!(pom.contains("<arg>-parameters</arg>"));
+        assert!(pom.contains("<arg>-Xlint:all</arg>"));
+        assert!(pom.contains("maven-surefire-plugin"));
     }
 
     #[tokio::test]
@@ -1950,6 +2251,7 @@ mod tests {
             framework_version: None,
             initializr_dependencies: None,
             skip_initializr: true,
+            test_framework: TestFramework::JUnit5,
         };
 
         generate_project(&opts).await.unwrap();
@@ -1981,6 +2283,7 @@ mod tests {
             framework_version: None,
             initializr_dependencies: None,
             skip_initializr: true,
+            test_framework: TestFramework::JUnit5,
         };
 
         generate_project(&opts).await.unwrap();
@@ -1991,5 +2294,55 @@ mod tests {
         let root_pom = fs::read_to_string(dir.path().join("pom.xml")).unwrap();
         assert!(root_pom.contains("<module>core</module>"));
         assert!(root_pom.contains("<module>api</module>"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_project_with_skip_test_and_assertj() {
+        let dir = tempdir().unwrap();
+
+        // 1. None (Skip test library)
+        let none_dir = dir.path().join("none-test");
+        let none_opts = NewProjectOptions {
+            name: "none-test".into(),
+            group_id: "com.example.notest".into(),
+            template: TemplateType::Cli,
+            build_tool: BuildToolChoice::GradleKts,
+            java_version: "21".into(),
+            distribution: None,
+            destination: none_dir.clone(),
+            framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
+            test_framework: TestFramework::None,
+        };
+        generate_project(&none_opts).await.unwrap();
+        assert!(!none_dir
+            .join("src/test/java/com/example/notest/AppTest.java")
+            .exists());
+        let kts = fs::read_to_string(none_dir.join("build.gradle.kts")).unwrap();
+        assert!(kts.contains("enabled = false"));
+
+        // 2. AssertJ
+        let assertj_dir = dir.path().join("assertj-test");
+        let assertj_opts = NewProjectOptions {
+            name: "assertj-test".into(),
+            group_id: "com.example.assertj".into(),
+            template: TemplateType::Cli,
+            build_tool: BuildToolChoice::Maven,
+            java_version: "21".into(),
+            distribution: None,
+            destination: assertj_dir.clone(),
+            framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
+            test_framework: TestFramework::AssertJ,
+        };
+        generate_project(&assertj_opts).await.unwrap();
+        let test_file =
+            fs::read_to_string(assertj_dir.join("src/test/java/com/example/assertj/AppTest.java"))
+                .unwrap();
+        assert!(test_file.contains("import static org.assertj.core.api.Assertions.assertThat;"));
+        let pom = fs::read_to_string(assertj_dir.join("pom.xml")).unwrap();
+        assert!(pom.contains("assertj-core"));
     }
 }
