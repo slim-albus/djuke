@@ -48,6 +48,8 @@ impl ProcessRunner {
             cmd.env(k, v);
         }
 
+        cmd.kill_on_drop(true);
+
         let mut child = cmd.spawn().map_err(|e| {
             DjukeError::Process(format!(
                 "Failed to spawn program '{}' in '{}': {}",
@@ -63,9 +65,20 @@ impl ProcessRunner {
                 res.map_err(|e| DjukeError::Process(format!("Process error: {}", e)))?
             }
             _ = tokio::signal::ctrl_c() => {
-                // Intercept Ctrl+C gracefully: kill spawned child, restore terminal modes, return error
-                let _ = child.kill().await;
-                let _ = child.wait().await;
+                // Intercept Ctrl+C: give the child process up to 2 seconds to finish graceful shutdown
+                let grace = tokio::time::sleep(std::time::Duration::from_secs(2));
+                tokio::pin!(grace);
+
+                tokio::select! {
+                    res = child.wait() => {
+                        let _ = res;
+                    }
+                    _ = &mut grace => {
+                        let _ = child.kill().await;
+                        let _ = child.wait().await;
+                    }
+                }
+
                 restore_terminal_state();
                 return Err(DjukeError::Process("Process interrupted by user (Ctrl+C)".into()));
             }
