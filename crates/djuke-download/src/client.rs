@@ -57,7 +57,7 @@ impl Downloader {
                     .await
                 {
                     Ok(()) => {
-                        return self.verify_and_finalize(destination, expected_sha256);
+                        return self.verify_and_finalize(destination, expected_sha256).await;
                     }
                     Err(e) => {
                         // In case of parallel failure, fall back to sequential stream
@@ -76,7 +76,7 @@ impl Downloader {
 
         self.download_sequential(&target_url, destination, title)
             .await?;
-        self.verify_and_finalize(destination, expected_sha256)
+        self.verify_and_finalize(destination, expected_sha256).await
     }
 
     async fn probe_url(&self, url: &str) -> Result<(Option<u64>, bool, reqwest::Url)> {
@@ -182,7 +182,9 @@ impl Downloader {
         let mut handles = Vec::new();
 
         for (idx, start, end) in ranges {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let permit = semaphore.clone().acquire_owned().await.map_err(|_| {
+                DjukeError::Generic("Download semaphore closed unexpectedly".into())
+            })?;
             let client = self.client.clone();
             let worker_url = url.clone();
             let pb = pb.clone();
@@ -198,7 +200,7 @@ impl Downloader {
                         .header("Range", format!("bytes={}-{}", start, end));
 
                     match req.send().await {
-                        Ok(resp) if resp.status().is_success() => {
+                        Ok(resp) if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT => {
                             let file = File::create(&part_path).await?;
                             let mut writer = BufWriter::with_capacity(BUFFER_CAPACITY, file);
                             let mut stream = resp.bytes_stream();
@@ -235,6 +237,17 @@ impl Downloader {
                                     return Ok(());
                                 }
                             }
+                        }
+                        Ok(resp) if resp.status().is_success() => {
+                            // Server returned 200 OK (full body) instead of 206 Partial Content.
+                            // Terminate worker so caller falls back to sequential stream without duplicating data.
+                            let _ = tokio::fs::remove_file(&part_path).await;
+                            return Err(DjukeError::Network(format!(
+                                "Server returned status {} instead of 206 Partial Content for byte range {}-{}",
+                                resp.status(),
+                                start,
+                                end
+                            )));
                         }
                         _ => {}
                     }
@@ -372,9 +385,18 @@ impl Downloader {
         Ok(())
     }
 
-    fn verify_and_finalize(&self, destination: &Path, expected_sha256: Option<&str>) -> Result<()> {
+    async fn verify_and_finalize(
+        &self,
+        destination: &Path,
+        expected_sha256: Option<&str>,
+    ) -> Result<()> {
         if let Some(expected) = expected_sha256.filter(|c| !c.trim().is_empty()) {
-            if let Err(e) = verify_checksum(destination, expected) {
+            let dest = destination.to_path_buf();
+            let exp = expected.to_string();
+            let res = tokio::task::spawn_blocking(move || verify_checksum(&dest, &exp))
+                .await
+                .map_err(|e| DjukeError::Process(format!("Checksum task panicked: {}", e)))?;
+            if let Err(e) = res {
                 let _ = std::fs::remove_file(destination);
                 return Err(e);
             }
