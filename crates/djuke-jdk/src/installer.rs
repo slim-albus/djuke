@@ -89,6 +89,23 @@ pub async fn install_jdk(spec: &JdkSpec, paths: &DjukePaths, quiet: bool) -> Res
 
     let effective_home = DjukePaths::effective_java_home(&target_dir);
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let bin_dir = effective_home.join("bin");
+        if let Ok(entries) = std::fs::read_dir(bin_dir) {
+            for entry in entries.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    if meta.is_file() {
+                        let mut perms = meta.permissions();
+                        perms.set_mode(0o755);
+                        let _ = std::fs::set_permissions(entry.path(), perms);
+                    }
+                }
+            }
+        }
+    }
+
     let installed = InstalledJdk {
         id: folder_name,
         distribution: spec.distribution,

@@ -128,7 +128,12 @@ impl JdkStore {
                 DjukeError::JdkNotInstalled(format!("No JDK matching '{}'", target_id_or_version))
             })?;
 
-        fs::remove_dir_all(&target.java_home)?;
+        let install_dir = self.paths.jdks_dir().join(&target.id);
+        if install_dir.exists() {
+            fs::remove_dir_all(&install_dir)?;
+        } else if target.java_home.exists() {
+            fs::remove_dir_all(&target.java_home)?;
+        }
         Ok(target.java_home)
     }
 }
