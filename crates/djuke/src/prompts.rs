@@ -11,6 +11,11 @@ pub async fn resolve_project_options(
 ) -> Result<ResolvedProjectInitOptions> {
     let is_interactive = !opts.yes && std::io::stdin().is_terminal();
     let theme = dialoguer::theme::ColorfulTheme::default();
+    let paths = DjukePaths::discover();
+    let global_config =
+        djuke_config::global::load_global_config(&paths.config_file()).unwrap_or_default();
+    let default_distro = global_config.default_distribution();
+    let default_version = global_config.default_java_version();
 
     // 1. Resolve Project Name
     let name = match opts.name {
@@ -88,6 +93,11 @@ pub async fn resolve_project_options(
     let build_tool = match opts.build_tool {
         Some(b) => b.parse()?,
         None => {
+            let default_tool_idx = match global_config.default_build_tool().as_deref() {
+                Some("gradle-groovy") | Some("groovy") => 1,
+                Some("maven") | Some("mvn") => 2,
+                _ => 0,
+            };
             if is_interactive {
                 let tools = [
                     "Gradle (Kotlin DSL)  [Recommended - build.gradle.kts]",
@@ -97,7 +107,7 @@ pub async fn resolve_project_options(
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select build tool")
                     .items(&tools)
-                    .default(0)
+                    .default(default_tool_idx)
                     .max_length(5)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
@@ -108,7 +118,11 @@ pub async fn resolve_project_options(
                     _ => djuke_templates::BuildToolChoice::GradleKts,
                 }
             } else {
-                djuke_templates::BuildToolChoice::GradleKts
+                match default_tool_idx {
+                    1 => djuke_templates::BuildToolChoice::GradleGroovy,
+                    2 => djuke_templates::BuildToolChoice::Maven,
+                    _ => djuke_templates::BuildToolChoice::GradleKts,
+                }
             }
         }
     };
@@ -117,46 +131,75 @@ pub async fn resolve_project_options(
     let distro = match opts.distro {
         Some(d) => Some(d),
         None => {
-            if is_interactive {
-                let distros = [
+            let distro_pairs = [
+                (
+                    JdkDistribution::OpenJdk,
                     "OpenJDK (Oracle)      [Default official build]",
+                ),
+                (
+                    JdkDistribution::Temurin,
                     "Eclipse Temurin       [Adoptium production standard]",
+                ),
+                (
+                    JdkDistribution::Corretto,
                     "Amazon Corretto       [AWS production distribution]",
+                ),
+                (
+                    JdkDistribution::Zulu,
                     "Azul Zulu             [Certified TCK builds]",
+                ),
+                (
+                    JdkDistribution::Microsoft,
                     "Microsoft OpenJDK     [Cloud-optimized OpenJDK]",
+                ),
+                (
+                    JdkDistribution::Graalvm,
                     "GraalVM Community     [Native-image high performance]",
+                ),
+                (
+                    JdkDistribution::Liberica,
                     "BellSoft Liberica     [Full desktop & cloud builds]",
+                ),
+                (
+                    JdkDistribution::Oracle,
                     "Oracle JDK            [Official Oracle distribution]",
+                ),
+                (
+                    JdkDistribution::Sapmachine,
                     "SAP SapMachine        [Enterprise SAP OpenJDK]",
+                ),
+                (
+                    JdkDistribution::Semeru,
                     "IBM Semeru            [Low footprint Eclipse OpenJ9]",
-                ];
+                ),
+            ];
+            let default_distro_idx = distro_pairs
+                .iter()
+                .position(|(d, _)| *d == default_distro)
+                .unwrap_or(0);
+
+            if is_interactive {
+                let labels: Vec<&str> = distro_pairs.iter().map(|(_, l)| *l).collect();
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select JDK distribution (flavour)")
-                    .items(&distros)
-                    .default(0)
+                    .items(&labels)
+                    .default(default_distro_idx)
                     .max_length(7)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
-                match idx {
-                    0 => Some(JdkDistribution::OpenJdk),
-                    1 => Some(JdkDistribution::Temurin),
-                    2 => Some(JdkDistribution::Corretto),
-                    3 => Some(JdkDistribution::Zulu),
-                    4 => Some(JdkDistribution::Microsoft),
-                    5 => Some(JdkDistribution::Graalvm),
-                    6 => Some(JdkDistribution::Liberica),
-                    7 => Some(JdkDistribution::Oracle),
-                    8 => Some(JdkDistribution::Sapmachine),
-                    9 => Some(JdkDistribution::Semeru),
-                    _ => Some(JdkDistribution::OpenJdk),
-                }
+                Some(
+                    distro_pairs
+                        .get(idx)
+                        .map(|(d, _)| *d)
+                        .unwrap_or(default_distro),
+                )
             } else {
-                Some(JdkDistribution::default_distro())
+                Some(default_distro)
             }
         }
     };
 
-    let selected_distro = distro.unwrap_or_else(JdkDistribution::default_distro);
+    let selected_distro = distro.unwrap_or(default_distro);
 
     // 5. Resolve Java Version (with installed-status indicator under chosen flavour)
     let java = match opts.java {
@@ -220,10 +263,20 @@ pub async fn resolve_project_options(
                     v8_label.as_str(),
                     "Custom version... (type any version, e.g. 24, 22, 26)",
                 ];
+                let default_ver_idx = match default_version.as_str() {
+                    "21" => 0,
+                    "25" => 1,
+                    "23" => 2,
+                    "17" => 3,
+                    "27" => 4,
+                    "11" => 5,
+                    "8" => 6,
+                    _ => 0,
+                };
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select target Java version")
                     .items(&versions)
-                    .default(0)
+                    .default(default_ver_idx)
                     .max_length(7)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
@@ -237,13 +290,13 @@ pub async fn resolve_project_options(
                     6 => "8".to_string(),
                     7 => dialoguer::Input::with_theme(&theme)
                         .with_prompt("Enter target Java version")
-                        .default("21".to_string())
+                        .default(default_version)
                         .interact_text()
                         .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?,
-                    _ => "21".to_string(),
+                    _ => default_version,
                 }
             } else {
-                "21".to_string()
+                default_version
             }
         }
     };
@@ -252,6 +305,13 @@ pub async fn resolve_project_options(
     let test_framework = match opts.test_framework {
         Some(tf) => tf,
         None => {
+            let default_tf_idx = match global_config.default_test_framework().as_deref() {
+                Some("assertj") => 1,
+                Some("spock") => 2,
+                Some("testng") => 3,
+                Some("none") | Some("skip") => 4,
+                _ => 0,
+            };
             if is_interactive {
                 let frameworks = [
                     "JUnit 5 (Jupiter) - Modern standard [Recommended]",
@@ -263,7 +323,7 @@ pub async fn resolve_project_options(
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select testing framework")
                     .items(&frameworks)
-                    .default(0)
+                    .default(default_tf_idx)
                     .max_length(5)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
@@ -276,7 +336,13 @@ pub async fn resolve_project_options(
                     _ => djuke_templates::TestFramework::JUnit5,
                 }
             } else {
-                djuke_templates::TestFramework::JUnit5
+                match default_tf_idx {
+                    1 => djuke_templates::TestFramework::AssertJ,
+                    2 => djuke_templates::TestFramework::Spock,
+                    3 => djuke_templates::TestFramework::TestNG,
+                    4 => djuke_templates::TestFramework::None,
+                    _ => djuke_templates::TestFramework::JUnit5,
+                }
             }
         }
     };

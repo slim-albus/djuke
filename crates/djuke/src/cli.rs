@@ -191,6 +191,9 @@ pub enum Commands {
     #[command(about = "Manage downloaded archives and temporary cache files")]
     Cache(CacheArgs),
 
+    #[command(about = "Inspect and update user preferences and default configuration")]
+    Config(ConfigArgs),
+
     #[command(
         about = "Prepare project dependencies, JDK, and build tool wrappers",
         alias = "install"
@@ -433,6 +436,30 @@ pub enum CacheSubcommands {
 
     #[command(about = "Clear cached archive files and temporary extraction directories")]
     Clean,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct ConfigArgs {
+    #[command(subcommand)]
+    pub action: Option<ConfigSubcommands>,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ConfigSubcommands {
+    #[command(about = "Get a configuration setting")]
+    Get {
+        #[arg(help = "Key name (e.g. 'distribution', 'version', 'build_tool', 'test_framework')")]
+        key: String,
+    },
+    #[command(about = "Set a configuration setting")]
+    Set {
+        #[arg(help = "Key name (e.g. 'distribution', 'version', 'build_tool', 'test_framework')")]
+        key: String,
+        #[arg(help = "Value to set")]
+        value: String,
+    },
+    #[command(about = "List all configuration settings")]
+    List,
 }
 
 #[derive(Args, Debug, Clone)]

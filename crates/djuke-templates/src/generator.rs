@@ -30,38 +30,36 @@ pub async fn generate_project(opts: &NewProjectOptions) -> Result<()> {
 
     let pkg_path = opts.group_id.replace('.', "/");
     let main_src = dest.join("src").join("main").join("java").join(&pkg_path);
-    let test_src = dest.join("src").join("test").join("java").join(&pkg_path);
     let resources = dest.join("src").join("main").join("resources");
 
     fs::create_dir_all(&main_src)?;
-    fs::create_dir_all(&test_src)?;
     fs::create_dir_all(&resources)?;
 
     // Generate source files based on template
     match opts.template {
         TemplateType::Cli => {
-            generate_cli_source(&main_src, &test_src, opts)?;
+            generate_cli_source(&main_src, dest, opts)?;
         }
         TemplateType::Lib => {
-            generate_lib_source(&main_src, &test_src, opts)?;
+            generate_lib_source(&main_src, dest, opts)?;
         }
         TemplateType::SpringBoot => {
-            generate_spring_source(&main_src, &test_src, opts)?;
+            generate_spring_source(&main_src, dest, opts)?;
         }
         TemplateType::Quarkus => {
-            generate_quarkus_source(&main_src, &test_src, opts)?;
+            generate_quarkus_source(&main_src, dest, opts)?;
         }
         TemplateType::Micronaut => {
-            generate_micronaut_source(&main_src, &test_src, opts)?;
+            generate_micronaut_source(&main_src, dest, opts)?;
         }
         TemplateType::Javalin => {
-            generate_javalin_source(&main_src, &test_src, opts)?;
+            generate_javalin_source(&main_src, dest, opts)?;
         }
         TemplateType::Grpc => {
-            generate_grpc_source(&main_src, &test_src, dest, opts)?;
+            generate_grpc_source(&main_src, dest, opts)?;
         }
         TemplateType::Picocli => {
-            generate_picocli_source(&main_src, &test_src, opts)?;
+            generate_picocli_source(&main_src, dest, opts)?;
         }
         TemplateType::MultiModule => unreachable!(),
     }
@@ -227,91 +225,905 @@ mvnw text eol=lf
     Ok(())
 }
 
-fn generate_test_source(test: &Path, class_name: &str, opts: &NewProjectOptions) -> Result<()> {
+#[derive(Debug, Clone, Copy)]
+enum TestKind {
+    Cli,
+    Lib,
+    SpringBoot,
+    Quarkus,
+    Micronaut,
+    Javalin,
+    Grpc,
+    Picocli,
+    MultiModuleCore,
+    MultiModuleApi,
+}
+
+fn generate_test_for_template(dest: &Path, opts: &NewProjectOptions, kind: TestKind) -> Result<()> {
     if opts.test_framework == TestFramework::None {
         return Ok(());
     }
 
+    let pkg_path = opts.group_id.replace('.', "/");
+
+    if opts.test_framework == TestFramework::Spock {
+        let test_groovy = match kind {
+            TestKind::MultiModuleCore => dest
+                .join("core")
+                .join("src")
+                .join("test")
+                .join("groovy")
+                .join(&pkg_path)
+                .join("core"),
+            TestKind::MultiModuleApi => dest
+                .join("api")
+                .join("src")
+                .join("test")
+                .join("groovy")
+                .join(&pkg_path)
+                .join("api"),
+            _ => dest.join("src").join("test").join("groovy").join(&pkg_path),
+        };
+        fs::create_dir_all(&test_groovy)?;
+
+        let (spec_name, content) = match kind {
+            TestKind::Cli => (
+                "AppSpec.groovy",
+                format!(
+                    r#"package {}
+
+import spock.lang.Specification
+
+class AppSpec extends Specification {{
+    def "greeting returns expected message"() {{
+        given:
+        def app = new App()
+
+        expect:
+        app.getGreeting() == "Hello World!"
+    }}
+}}
+"#,
+                    opts.group_id
+                ),
+            ),
+            TestKind::Lib => (
+                "LibrarySpec.groovy",
+                format!(
+                    r#"package {}
+
+import spock.lang.Specification
+
+class LibrarySpec extends Specification {{
+    def "library method works"() {{
+        given:
+        def lib = new Library()
+
+        expect:
+        lib.someLibraryMethod() == true
+    }}
+}}
+"#,
+                    opts.group_id
+                ),
+            ),
+            TestKind::SpringBoot => (
+                "ApplicationSpec.groovy",
+                format!(
+                    r#"package {}
+
+import org.springframework.boot.test.context.SpringBootTest
+import spock.lang.Specification
+
+@SpringBootTest
+class ApplicationSpec extends Specification {{
+    def "context loads"() {{
+        expect:
+        true
+    }}
+}}
+"#,
+                    opts.group_id
+                ),
+            ),
+            TestKind::Quarkus => (
+                "GreetingResourceSpec.groovy",
+                format!(
+                    r#"package {}
+
+import io.quarkus.test.junit.QuarkusTest
+import spock.lang.Specification
+
+@QuarkusTest
+class GreetingResourceSpec extends Specification {{
+    def "hello endpoint test"() {{
+        expect:
+        true
+    }}
+}}
+"#,
+                    opts.group_id
+                ),
+            ),
+            TestKind::Micronaut => (
+                "ApplicationSpec.groovy",
+                format!(
+                    r#"package {}
+
+import io.micronaut.runtime.EmbeddedApplication
+import io.micronaut.test.extensions.junit5.annotation.MicronautTest
+import jakarta.inject.Inject
+import spock.lang.Specification
+
+@MicronautTest
+class ApplicationSpec extends Specification {{
+    @Inject
+    EmbeddedApplication<?> application
+
+    def "application is running"() {{
+        expect:
+        application.isRunning()
+    }}
+}}
+"#,
+                    opts.group_id
+                ),
+            ),
+            TestKind::Javalin => (
+                "AppSpec.groovy",
+                format!(
+                    r#"package {}
+
+import spock.lang.Specification
+
+class AppSpec extends Specification {{
+    def "greeting returns expected message"() {{
+        given:
+        def app = new App()
+
+        expect:
+        app.getGreeting() == "Hello from Javalin!"
+    }}
+}}
+"#,
+                    opts.group_id
+                ),
+            ),
+            TestKind::Grpc => (
+                "AppSpec.groovy",
+                format!(
+                    r#"package {}
+
+import spock.lang.Specification
+
+class AppSpec extends Specification {{
+    def "format greeting works"() {{
+        given:
+        def app = new App()
+
+        expect:
+        app.formatGreeting("Alice") == "Hello, Alice! Welcome to gRPC."
+    }}
+}}
+"#,
+                    opts.group_id
+                ),
+            ),
+            TestKind::Picocli => (
+                "AppSpec.groovy",
+                format!(
+                    r#"package {}
+
+import picocli.CommandLine
+import spock.lang.Specification
+
+class AppSpec extends Specification {{
+    def "help flag executes cleanly"() {{
+        given:
+        def app = new App()
+        def cmd = new CommandLine(app)
+
+        expect:
+        cmd.execute("--help") == 0
+    }}
+}}
+"#,
+                    opts.group_id
+                ),
+            ),
+            TestKind::MultiModuleCore => (
+                "DomainServiceSpec.groovy",
+                format!(
+                    r#"package {}.core
+
+import spock.lang.Specification
+
+class DomainServiceSpec extends Specification {{
+    def "process input works"() {{
+        given:
+        def service = new DomainService()
+
+        expect:
+        service.process("test") == "Processed: test"
+    }}
+}}
+"#,
+                    opts.group_id
+                ),
+            ),
+            TestKind::MultiModuleApi => (
+                "AppSpec.groovy",
+                format!(
+                    r#"package {}.api
+
+import spock.lang.Specification
+
+class AppSpec extends Specification {{
+    def "app sanity test"() {{
+        expect:
+        true
+    }}
+}}
+"#,
+                    opts.group_id
+                ),
+            ),
+        };
+
+        fs::write(test_groovy.join(spec_name), content)?;
+        return Ok(());
+    }
+
+    let test_java_dir = match kind {
+        TestKind::MultiModuleCore => dest
+            .join("core")
+            .join("src")
+            .join("test")
+            .join("java")
+            .join(&pkg_path)
+            .join("core"),
+        TestKind::MultiModuleApi => dest
+            .join("api")
+            .join("src")
+            .join("test")
+            .join("java")
+            .join(&pkg_path)
+            .join("api"),
+        _ => dest.join("src").join("test").join("java").join(&pkg_path),
+    };
+    fs::create_dir_all(&test_java_dir)?;
+
     match opts.test_framework {
+        TestFramework::None | TestFramework::Spock => unreachable!(),
         TestFramework::JUnit5 => {
-            let test_java = format!(
-                r#"package {};
+            let (file_name, content) = match kind {
+                TestKind::Cli => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-class {}Test {{
+class AppTest {{
     @Test
     void testAppSanity() {{
-        assertTrue(true, "sanity test passed");
+        App app = new App();
+        assertEquals("Hello World!", app.getGreeting());
     }}
 }}
 "#,
-                opts.group_id, class_name
-            );
-            fs::write(test.join(format!("{}Test.java", class_name)), test_java)?;
-        }
-        TestFramework::AssertJ => {
-            let test_java = format!(
-                r#"package {};
-
-import org.junit.jupiter.api.Test;
-import static org.assertj.core.api.Assertions.assertThat;
-
-class {}Test {{
-    @Test
-    void testAppSanity() {{
-        assertThat(1 + 1).isEqualTo(2);
-    }}
-}}
-"#,
-                opts.group_id, class_name
-            );
-            fs::write(test.join(format!("{}Test.java", class_name)), test_java)?;
-        }
-        TestFramework::TestNG => {
-            let test_java = format!(
-                r#"package {};
-
-import org.testng.Assert;
-import org.testng.annotations.Test;
-
-public class {}Test {{
-    @Test
-    public void testAppSanity() {{
-        Assert.assertEquals(1 + 1, 2);
-    }}
-}}
-"#,
-                opts.group_id, class_name
-            );
-            fs::write(test.join(format!("{}Test.java", class_name)), test_java)?;
-        }
-        TestFramework::Spock => {
-            let test_java = format!(
-                r#"package {};
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Lib => (
+                    "LibraryTest.java",
+                    format!(
+                        r#"package {};
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-class {}Test {{
+class LibraryTest {{
     @Test
-    void testAppSanity() {{
+    void testSomeLibraryMethod() {{
+        Library classUnderTest = new Library();
+        assertTrue(classUnderTest.someLibraryMethod(), "someLibraryMethod should return 'true'");
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::SpringBoot => (
+                    "ApplicationTests.java",
+                    format!(
+                        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class ApplicationTests {{
+    @Test
+    void contextLoads() {{
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Quarkus => (
+                    "GreetingResourceTest.java",
+                    format!(
+                        r#"package {};
+
+import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.Test;
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.CoreMatchers.is;
+
+@QuarkusTest
+class GreetingResourceTest {{
+    @Test
+    void testHelloEndpoint() {{
+        given()
+          .when().get("/hello")
+          .then()
+             .statusCode(200)
+             .body(is("Hello from Quarkus + djuke"));
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Micronaut => (
+                    "ApplicationTest.java",
+                    format!(
+                        r#"package {};
+
+import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assertions;
+import jakarta.inject.Inject;
+import io.micronaut.runtime.EmbeddedApplication;
+
+@MicronautTest
+class ApplicationTest {{
+    @Inject
+    EmbeddedApplication<?> application;
+
+    @Test
+    void testItWorks() {{
+        Assertions.assertTrue(application.isRunning());
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Javalin => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class AppTest {{
+    @Test
+    void testGreeting() {{
+        App app = new App();
+        assertEquals("Hello from Javalin!", app.getGreeting());
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Grpc => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class AppTest {{
+    @Test
+    void testFormatGreeting() {{
+        App app = new App();
+        assertEquals("Hello, Alice! Welcome to gRPC.", app.formatGreeting("Alice"));
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Picocli => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import picocli.CommandLine;
+import static org.junit.jupiter.api.Assertions.*;
+
+class AppTest {{
+    @Test
+    void testHelpOption() {{
+        App app = new App();
+        CommandLine cmd = new CommandLine(app);
+        int exitCode = cmd.execute("--help");
+        assertEquals(0, exitCode);
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::MultiModuleCore => (
+                    "DomainServiceTest.java",
+                    format!(
+                        r#"package {}.core;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class DomainServiceTest {{
+    @Test
+    void testProcess() {{
+        DomainService service = new DomainService();
+        assertEquals("Processed: test", service.process("test"));
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::MultiModuleApi => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {}.api;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class AppTest {{
+    @Test
+    void testAppLoads() {{
         assertTrue(true);
     }}
 }}
 "#,
-                opts.group_id, class_name
-            );
-            fs::write(test.join(format!("{}Test.java", class_name)), test_java)?;
+                        opts.group_id
+                    ),
+                ),
+            };
+            fs::write(test_java_dir.join(file_name), content)?;
         }
-        TestFramework::None => {}
+        TestFramework::AssertJ => {
+            let (file_name, content) = match kind {
+                TestKind::Cli => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class AppTest {{
+    @Test
+    void testAppSanity() {{
+        App app = new App();
+        assertThat(app.getGreeting()).isEqualTo("Hello World!");
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Lib => (
+                    "LibraryTest.java",
+                    format!(
+                        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class LibraryTest {{
+    @Test
+    void testSomeLibraryMethod() {{
+        Library classUnderTest = new Library();
+        assertThat(classUnderTest.someLibraryMethod()).isTrue();
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::SpringBoot => (
+                    "ApplicationTests.java",
+                    format!(
+                        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import static org.assertj.core.api.Assertions.assertThat;
+
+@SpringBootTest
+class ApplicationTests {{
+    @Test
+    void contextLoads() {{
+        assertThat(1 + 1).isEqualTo(2);
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Quarkus => (
+                    "GreetingResourceTest.java",
+                    format!(
+                        r#"package {};
+
+import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.Test;
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.CoreMatchers.is;
+
+@QuarkusTest
+class GreetingResourceTest {{
+    @Test
+    void testHelloEndpoint() {{
+        given()
+          .when().get("/hello")
+          .then()
+             .statusCode(200)
+             .body(is("Hello from Quarkus + djuke"));
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Micronaut => (
+                    "ApplicationTest.java",
+                    format!(
+                        r#"package {};
+
+import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+import jakarta.inject.Inject;
+import io.micronaut.runtime.EmbeddedApplication;
+
+@MicronautTest
+class ApplicationTest {{
+    @Inject
+    EmbeddedApplication<?> application;
+
+    @Test
+    void testItWorks() {{
+        assertThat(application.isRunning()).isTrue();
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Javalin => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class AppTest {{
+    @Test
+    void testGreeting() {{
+        App app = new App();
+        assertThat(app.getGreeting()).isEqualTo("Hello from Javalin!");
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Grpc => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class AppTest {{
+    @Test
+    void testFormatGreeting() {{
+        App app = new App();
+        assertThat(app.formatGreeting("Alice")).isEqualTo("Hello, Alice! Welcome to gRPC.");
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Picocli => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.junit.jupiter.api.Test;
+import picocli.CommandLine;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class AppTest {{
+    @Test
+    void testHelpOption() {{
+        App app = new App();
+        CommandLine cmd = new CommandLine(app);
+        int exitCode = cmd.execute("--help");
+        assertThat(exitCode).isZero();
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::MultiModuleCore => (
+                    "DomainServiceTest.java",
+                    format!(
+                        r#"package {}.core;
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class DomainServiceTest {{
+    @Test
+    void testProcess() {{
+        DomainService service = new DomainService();
+        assertThat(service.process("test")).isEqualTo("Processed: test");
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::MultiModuleApi => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {}.api;
+
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class AppTest {{
+    @Test
+    void testAppLoads() {{
+        assertThat(true).isTrue();
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+            };
+            fs::write(test_java_dir.join(file_name), content)?;
+        }
+        TestFramework::TestNG => {
+            let (file_name, content) = match kind {
+                TestKind::Cli => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+public class AppTest {{
+    @Test
+    public void testAppSanity() {{
+        App app = new App();
+        Assert.assertEquals(app.getGreeting(), "Hello World!");
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Lib => (
+                    "LibraryTest.java",
+                    format!(
+                        r#"package {};
+
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+public class LibraryTest {{
+    @Test
+    public void testSomeLibraryMethod() {{
+        Library classUnderTest = new Library();
+        Assert.assertTrue(classUnderTest.someLibraryMethod());
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::SpringBoot => (
+                    "ApplicationTests.java",
+                    format!(
+                        r#"package {};
+
+import org.springframework.boot.test.context.SpringBootTest;
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+@SpringBootTest
+public class ApplicationTests {{
+    @Test
+    public void contextLoads() {{
+        Assert.assertTrue(true);
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Quarkus => (
+                    "GreetingResourceTest.java",
+                    format!(
+                        r#"package {};
+
+import io.quarkus.test.junit.QuarkusTest;
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+@QuarkusTest
+public class GreetingResourceTest {{
+    @Test
+    public void testHelloEndpoint() {{
+        Assert.assertTrue(true);
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Micronaut => (
+                    "ApplicationTest.java",
+                    format!(
+                        r#"package {};
+
+import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import org.testng.Assert;
+import org.testng.annotations.Test;
+import jakarta.inject.Inject;
+import io.micronaut.runtime.EmbeddedApplication;
+
+@MicronautTest
+public class ApplicationTest {{
+    @Inject
+    EmbeddedApplication<?> application;
+
+    @Test
+    public void testItWorks() {{
+        Assert.assertTrue(application.isRunning());
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Javalin => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+public class AppTest {{
+    @Test
+    public void testGreeting() {{
+        App app = new App();
+        Assert.assertEquals(app.getGreeting(), "Hello from Javalin!");
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Grpc => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+public class AppTest {{
+    @Test
+    public void testFormatGreeting() {{
+        App app = new App();
+        Assert.assertEquals(app.formatGreeting("Alice"), "Hello, Alice! Welcome to gRPC.");
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::Picocli => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {};
+
+import org.testng.Assert;
+import org.testng.annotations.Test;
+import picocli.CommandLine;
+
+public class AppTest {{
+    @Test
+    public void testHelpOption() {{
+        App app = new App();
+        CommandLine cmd = new CommandLine(app);
+        int exitCode = cmd.execute("--help");
+        Assert.assertEquals(exitCode, 0);
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::MultiModuleCore => (
+                    "DomainServiceTest.java",
+                    format!(
+                        r#"package {}.core;
+
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+public class DomainServiceTest {{
+    @Test
+    public void testProcess() {{
+        DomainService service = new DomainService();
+        Assert.assertEquals(service.process("test"), "Processed: test");
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+                TestKind::MultiModuleApi => (
+                    "AppTest.java",
+                    format!(
+                        r#"package {}.api;
+
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+public class AppTest {{
+    @Test
+    public void testAppLoads() {{
+        Assert.assertTrue(true);
+    }}
+}}
+"#,
+                        opts.group_id
+                    ),
+                ),
+            };
+            fs::write(test_java_dir.join(file_name), content)?;
+        }
     }
 
     Ok(())
 }
 
-fn generate_cli_source(main: &Path, test: &Path, opts: &NewProjectOptions) -> Result<()> {
+fn generate_cli_source(main: &Path, dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let app_java = format!(
         r#"package {};
 
@@ -328,11 +1140,11 @@ public class App {{
         opts.group_id, opts.name
     );
     fs::write(main.join("App.java"), app_java)?;
-    generate_test_source(test, "App", opts)?;
+    generate_test_for_template(dest, opts, TestKind::Cli)?;
     Ok(())
 }
 
-fn generate_lib_source(main: &Path, test: &Path, opts: &NewProjectOptions) -> Result<()> {
+fn generate_lib_source(main: &Path, dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let lib_java = format!(
         r#"package {};
 
@@ -345,11 +1157,11 @@ public class Library {{
         opts.group_id
     );
     fs::write(main.join("Library.java"), lib_java)?;
-    generate_test_source(test, "Library", opts)?;
+    generate_test_for_template(dest, opts, TestKind::Lib)?;
     Ok(())
 }
 
-fn generate_spring_source(main: &Path, test: &Path, opts: &NewProjectOptions) -> Result<()> {
+fn generate_spring_source(main: &Path, dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let app_java = format!(
         r#"package {};
 
@@ -381,27 +1193,11 @@ public class Application {{
         opts.group_id
     );
     fs::write(main.join("Application.java"), app_java)?;
-
-    let test_java = format!(
-        r#"package {};
-
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-
-@SpringBootTest
-class ApplicationTests {{
-    @Test
-    void contextLoads() {{
-    }}
-}}
-"#,
-        opts.group_id
-    );
-    fs::write(test.join("ApplicationTests.java"), test_java)?;
+    generate_test_for_template(dest, opts, TestKind::SpringBoot)?;
     Ok(())
 }
 
-fn generate_quarkus_source(main: &Path, test: &Path, opts: &NewProjectOptions) -> Result<()> {
+fn generate_quarkus_source(main: &Path, dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let resource_java = format!(
         r#"package {};
 
@@ -422,34 +1218,11 @@ public class GreetingResource {{
         opts.group_id
     );
     fs::write(main.join("GreetingResource.java"), resource_java)?;
-
-    let test_java = format!(
-        r#"package {};
-
-import io.quarkus.test.junit.QuarkusTest;
-import org.junit.jupiter.api.Test;
-import static io.restassured.RestAssured.given;
-import static org.hamcrest.CoreMatchers.is;
-
-@QuarkusTest
-class GreetingResourceTest {{
-    @Test
-    void testHelloEndpoint() {{
-        given()
-          .when().get("/hello")
-          .then()
-             .statusCode(200)
-             .body(is("Hello from Quarkus + djuke"));
-    }}
-}}
-"#,
-        opts.group_id
-    );
-    fs::write(test.join("GreetingResourceTest.java"), test_java)?;
+    generate_test_for_template(dest, opts, TestKind::Quarkus)?;
     Ok(())
 }
 
-fn generate_micronaut_source(main: &Path, test: &Path, opts: &NewProjectOptions) -> Result<()> {
+fn generate_micronaut_source(main: &Path, dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let app_java = format!(
         r#"package {};
 
@@ -464,34 +1237,11 @@ public class Application {{
         opts.group_id
     );
     fs::write(main.join("Application.java"), app_java)?;
-
-    let test_java = format!(
-        r#"package {};
-
-import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Assertions;
-import jakarta.inject.Inject;
-import io.micronaut.runtime.EmbeddedApplication;
-
-@MicronautTest
-class ApplicationTest {{
-    @Inject
-    EmbeddedApplication<?> application;
-
-    @Test
-    void testItWorks() {{
-        Assertions.assertTrue(application.isRunning());
-    }}
-}}
-"#,
-        opts.group_id
-    );
-    fs::write(test.join("ApplicationTest.java"), test_java)?;
+    generate_test_for_template(dest, opts, TestKind::Micronaut)?;
     Ok(())
 }
 
-fn generate_javalin_source(main: &Path, test: &Path, opts: &NewProjectOptions) -> Result<()> {
+fn generate_javalin_source(main: &Path, dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let app_java = format!(
         r#"package {};
 
@@ -525,33 +1275,11 @@ public class App {{
         opts.group_id, opts.name
     );
     fs::write(main.join("App.java"), app_java)?;
-
-    let test_java = format!(
-        r#"package {};
-
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
-
-class AppTest {{
-    @Test
-    void testGreeting() {{
-        App app = new App();
-        assertEquals("Hello from Javalin!", app.getGreeting());
-    }}
-}}
-"#,
-        opts.group_id
-    );
-    fs::write(test.join("AppTest.java"), test_java)?;
+    generate_test_for_template(dest, opts, TestKind::Javalin)?;
     Ok(())
 }
 
-fn generate_grpc_source(
-    main: &Path,
-    test: &Path,
-    dest: &Path,
-    opts: &NewProjectOptions,
-) -> Result<()> {
+fn generate_grpc_source(main: &Path, dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let proto_dir = dest.join("src").join("main").join("proto");
     fs::create_dir_all(&proto_dir)?;
 
@@ -583,8 +1311,6 @@ message HelloReply {{
     let app_java = format!(
         r#"package {};
 
-import java.util.concurrent.TimeUnit;
-
 public class App {{
     public static void main(String[] args) {{
         System.out.println("gRPC Service initialized for {}");
@@ -599,28 +1325,11 @@ public class App {{
         opts.group_id, opts.name
     );
     fs::write(main.join("App.java"), app_java)?;
-
-    let test_java = format!(
-        r#"package {};
-
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
-
-class AppTest {{
-    @Test
-    void testFormatGreeting() {{
-        App app = new App();
-        assertEquals("Hello, Alice! Welcome to gRPC.", app.formatGreeting("Alice"));
-    }}
-}}
-"#,
-        opts.group_id
-    );
-    fs::write(test.join("AppTest.java"), test_java)?;
+    generate_test_for_template(dest, opts, TestKind::Grpc)?;
     Ok(())
 }
 
-fn generate_picocli_source(main: &Path, test: &Path, opts: &NewProjectOptions) -> Result<()> {
+fn generate_picocli_source(main: &Path, dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let app_java = format!(
         r#"package {};
 
@@ -662,27 +1371,7 @@ public class App implements Callable<Integer> {{
         opts.group_id, opts.name, opts.name
     );
     fs::write(main.join("App.java"), app_java)?;
-
-    let test_java = format!(
-        r#"package {};
-
-import org.junit.jupiter.api.Test;
-import picocli.CommandLine;
-import static org.junit.jupiter.api.Assertions.*;
-
-class AppTest {{
-    @Test
-    void testHelpOption() {{
-        App app = new App();
-        CommandLine cmd = new CommandLine(app);
-        int exitCode = cmd.execute("--help");
-        assertEquals(0, exitCode);
-    }}
-}}
-"#,
-        opts.group_id
-    );
-    fs::write(test.join("AppTest.java"), test_java)?;
+    generate_test_for_template(dest, opts, TestKind::Picocli)?;
     Ok(())
 }
 
@@ -695,13 +1384,6 @@ fn generate_multi_module_project(dest: &Path, opts: &NewProjectOptions) -> Resul
         .join("java")
         .join(&pkg_path)
         .join("core");
-    let core_test = dest
-        .join("core")
-        .join("src")
-        .join("test")
-        .join("java")
-        .join(&pkg_path)
-        .join("core");
     let api_main = dest
         .join("api")
         .join("src")
@@ -709,19 +1391,10 @@ fn generate_multi_module_project(dest: &Path, opts: &NewProjectOptions) -> Resul
         .join("java")
         .join(&pkg_path)
         .join("api");
-    let api_test = dest
-        .join("api")
-        .join("src")
-        .join("test")
-        .join("java")
-        .join(&pkg_path)
-        .join("api");
     let api_resources = dest.join("api").join("src").join("main").join("resources");
 
     fs::create_dir_all(&core_main)?;
-    fs::create_dir_all(&core_test)?;
     fs::create_dir_all(&api_main)?;
-    fs::create_dir_all(&api_test)?;
     fs::create_dir_all(&api_resources)?;
 
     // Core DomainService
@@ -737,24 +1410,7 @@ public class DomainService {{
         opts.group_id
     );
     fs::write(core_main.join("DomainService.java"), service_java)?;
-
-    let service_test = format!(
-        r#"package {}.core;
-
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
-
-class DomainServiceTest {{
-    @Test
-    void testProcess() {{
-        DomainService service = new DomainService();
-        assertEquals("Processed: test", service.process("test"));
-    }}
-}}
-"#,
-        opts.group_id
-    );
-    fs::write(core_test.join("DomainServiceTest.java"), service_test)?;
+    generate_test_for_template(dest, opts, TestKind::MultiModuleCore)?;
 
     // API App
     let app_java = format!(
@@ -772,23 +1428,7 @@ public class App {{
         opts.group_id, opts.group_id, opts.name
     );
     fs::write(api_main.join("App.java"), app_java)?;
-
-    let app_test = format!(
-        r#"package {}.api;
-
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
-
-class AppTest {{
-    @Test
-    void testAppLoads() {{
-        assertTrue(true);
-    }}
-}}
-"#,
-        opts.group_id
-    );
-    fs::write(api_test.join("AppTest.java"), app_test)?;
+    generate_test_for_template(dest, opts, TestKind::MultiModuleApi)?;
 
     // Logback for API module
     let logback_xml = r#"<configuration>
@@ -817,6 +1457,14 @@ include("core", "api")
             );
             fs::write(dest.join("settings.gradle.kts"), root_settings)?;
 
+            let groovy_plugin = if opts.test_framework == TestFramework::Spock {
+                "    apply(plugin = \"groovy\")\n"
+            } else {
+                ""
+            };
+            let test_deps = test_dependencies_gradle_kts(opts.test_framework);
+            let test_cfg = test_task_gradle_kts(opts.test_framework);
+
             let root_build = format!(
                 r#"plugins {{
     java
@@ -833,7 +1481,7 @@ allprojects {{
 
 subprojects {{
     apply(plugin = "java")
-
+{}
     java {{
         toolchain {{
             languageVersion.set(JavaLanguageVersion.of({}))
@@ -841,17 +1489,13 @@ subprojects {{
     }}
 
     dependencies {{
-        testImplementation(platform("org.junit:junit-bom:5.11.4"))
-        testImplementation("org.junit.jupiter:junit-jupiter")
-        testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+{}
     }}
 
-    tasks.withType<Test> {{
-        useJUnitPlatform()
-    }}
+    {}
 }}
 "#,
-                opts.group_id, j_ver
+                opts.group_id, groovy_plugin, j_ver, test_deps, test_cfg
             );
             fs::write(dest.join("build.gradle.kts"), root_build)?;
 
@@ -904,6 +1548,14 @@ include 'core', 'api'
             );
             fs::write(dest.join("settings.gradle"), root_settings)?;
 
+            let groovy_plugin = if opts.test_framework == TestFramework::Spock {
+                "    apply plugin: 'groovy'\n"
+            } else {
+                ""
+            };
+            let test_deps = test_dependencies_gradle_groovy(opts.test_framework);
+            let test_cfg = test_task_gradle_groovy(opts.test_framework);
+
             let root_build = format!(
                 r#"allprojects {{
     group = '{}'
@@ -916,7 +1568,7 @@ include 'core', 'api'
 
 subprojects {{
     apply plugin: 'java'
-
+{}
     java {{
         toolchain {{
             languageVersion = JavaLanguageVersion.of({})
@@ -924,17 +1576,13 @@ subprojects {{
     }}
 
     dependencies {{
-        testImplementation platform('org.junit:junit-bom:5.11.4')
-        testImplementation 'org.junit.jupiter:junit-jupiter'
-        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+{}
     }}
 
-    test {{
-        useJUnitPlatform()
-    }}
+    {}
 }}
 "#,
-                opts.group_id, j_ver
+                opts.group_id, groovy_plugin, j_ver, test_deps, test_cfg
             );
             fs::write(dest.join("build.gradle"), root_build)?;
 
@@ -1019,6 +1667,9 @@ dependencies {{
             );
             fs::write(dest.join("pom.xml"), root_pom)?;
 
+            let test_deps = test_dependencies_maven(opts.test_framework);
+            let spock_plugin = gmavenplus_plugin_maven(opts.test_framework);
+
             let core_pom = format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -1040,15 +1691,16 @@ dependencies {{
             <artifactId>slf4j-api</artifactId>
             <version>2.0.16</version>
         </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
+{}
     </dependencies>
+    <build>
+        <plugins>
+{}
+        </plugins>
+    </build>
 </project>
 "#,
-                opts.group_id, opts.name
+                opts.group_id, opts.name, test_deps, spock_plugin
             );
             fs::write(dest.join("core").join("pom.xml"), core_pom)?;
 
@@ -1078,11 +1730,7 @@ dependencies {{
             <artifactId>logback-classic</artifactId>
             <version>1.5.16</version>
         </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
+{}
     </dependencies>
 
     <build>
@@ -1095,11 +1743,12 @@ dependencies {{
                     <mainClass>{}.api.App</mainClass>
                 </configuration>
             </plugin>
+{}
         </plugins>
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, opts.group_id, opts.group_id
+                opts.group_id, opts.name, opts.group_id, test_deps, opts.group_id, spock_plugin
             );
             fs::write(dest.join("api").join("pom.xml"), api_pom)?;
         }
@@ -1278,6 +1927,392 @@ fn test_dependencies_maven(tf: TestFramework) -> &'static str {
     }
 }
 
+fn gmavenplus_plugin_maven(tf: TestFramework) -> &'static str {
+    if tf == TestFramework::Spock {
+        r#"            <plugin>
+                <groupId>org.codehaus.gmavenplus</groupId>
+                <artifactId>gmavenplus-plugin</artifactId>
+                <version>3.0.2</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compileTests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>"#
+    } else {
+        ""
+    }
+}
+
+fn initializr_deps_gradle_kts(deps: Option<&[String]>) -> String {
+    let default_deps = ["web", "actuator"];
+    let default_vec: Vec<String> = default_deps.iter().map(|s| s.to_string()).collect();
+    let list: &[String] = match deps {
+        Some(d) if !d.is_empty() => d,
+        _ => &default_vec,
+    };
+    let mut lines = Vec::new();
+    for dep in list {
+        match dep.as_str() {
+            "web" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-web\")"
+                    .to_string(),
+            ),
+            "actuator" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-actuator\")"
+                    .to_string(),
+            ),
+            "data-jpa" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-data-jpa\")"
+                    .to_string(),
+            ),
+            "security" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-security\")"
+                    .to_string(),
+            ),
+            "validation" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-validation\")"
+                    .to_string(),
+            ),
+            "devtools" => lines.push(
+                "    developmentOnly(\"org.springframework.boot:spring-boot-devtools\")"
+                    .to_string(),
+            ),
+            "thymeleaf" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-thymeleaf\")"
+                    .to_string(),
+            ),
+            "data-redis" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-data-redis\")"
+                    .to_string(),
+            ),
+            "kafka" => lines
+                .push("    implementation(\"org.springframework.kafka:spring-kafka\")".to_string()),
+            "postgresql" => {
+                lines.push("    runtimeOnly(\"org.postgresql:postgresql\")".to_string())
+            }
+            "mysql" => lines.push("    runtimeOnly(\"com.mysql:mysql-connector-j\")".to_string()),
+            "h2" => lines.push("    runtimeOnly(\"com.h2database:h2\")".to_string()),
+            "lombok" => {
+                lines.push("    compileOnly(\"org.projectlombok:lombok\")".to_string());
+                lines.push("    annotationProcessor(\"org.projectlombok:lombok\")".to_string());
+            }
+            "docker-compose" => lines.push(
+                "    developmentOnly(\"org.springframework.boot:spring-boot-docker-compose\")"
+                    .to_string(),
+            ),
+            "testcontainers" => lines.push(
+                "    testImplementation(\"org.springframework.boot:spring-boot-testcontainers\")"
+                    .to_string(),
+            ),
+            "graphql" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-graphql\")"
+                    .to_string(),
+            ),
+            "websocket" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-websocket\")"
+                    .to_string(),
+            ),
+            "mail" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-mail\")"
+                    .to_string(),
+            ),
+            "quartz" => lines.push(
+                "    implementation(\"org.springframework.boot:spring-boot-starter-quartz\")"
+                    .to_string(),
+            ),
+            other => {
+                if other.starts_with("org.") || other.contains(':') {
+                    lines.push(format!("    implementation(\"{}\")", other));
+                } else {
+                    lines.push(format!(
+                        "    implementation(\"org.springframework.boot:spring-boot-starter-{}\")",
+                        other
+                    ));
+                }
+            }
+        }
+    }
+    lines.join("\n")
+}
+
+fn initializr_deps_gradle_groovy(deps: Option<&[String]>) -> String {
+    let default_deps = ["web", "actuator"];
+    let default_vec: Vec<String> = default_deps.iter().map(|s| s.to_string()).collect();
+    let list: &[String] = match deps {
+        Some(d) if !d.is_empty() => d,
+        _ => &default_vec,
+    };
+    let mut lines = Vec::new();
+    for dep in list {
+        match dep.as_str() {
+            "web" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-web'".to_string(),
+            ),
+            "actuator" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-actuator'"
+                    .to_string(),
+            ),
+            "data-jpa" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'"
+                    .to_string(),
+            ),
+            "security" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-security'"
+                    .to_string(),
+            ),
+            "validation" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-validation'"
+                    .to_string(),
+            ),
+            "devtools" => lines.push(
+                "    developmentOnly 'org.springframework.boot:spring-boot-devtools'".to_string(),
+            ),
+            "thymeleaf" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'"
+                    .to_string(),
+            ),
+            "data-redis" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-data-redis'"
+                    .to_string(),
+            ),
+            "kafka" => lines
+                .push("    implementation 'org.springframework.kafka:spring-kafka'".to_string()),
+            "postgresql" => lines.push("    runtimeOnly 'org.postgresql:postgresql'".to_string()),
+            "mysql" => lines.push("    runtimeOnly 'com.mysql:mysql-connector-j'".to_string()),
+            "h2" => lines.push("    runtimeOnly 'com.h2database:h2'".to_string()),
+            "lombok" => {
+                lines.push("    compileOnly 'org.projectlombok:lombok'".to_string());
+                lines.push("    annotationProcessor 'org.projectlombok:lombok'".to_string());
+            }
+            "docker-compose" => lines.push(
+                "    developmentOnly 'org.springframework.boot:spring-boot-docker-compose'"
+                    .to_string(),
+            ),
+            "testcontainers" => lines.push(
+                "    testImplementation 'org.springframework.boot:spring-boot-testcontainers'"
+                    .to_string(),
+            ),
+            "graphql" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-graphql'"
+                    .to_string(),
+            ),
+            "websocket" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-websocket'"
+                    .to_string(),
+            ),
+            "mail" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-mail'"
+                    .to_string(),
+            ),
+            "quartz" => lines.push(
+                "    implementation 'org.springframework.boot:spring-boot-starter-quartz'"
+                    .to_string(),
+            ),
+            other => {
+                if other.starts_with("org.") || other.contains(':') {
+                    lines.push(format!("    implementation '{}'", other));
+                } else {
+                    lines.push(format!(
+                        "    implementation 'org.springframework.boot:spring-boot-starter-{}'",
+                        other
+                    ));
+                }
+            }
+        }
+    }
+    lines.join("\n")
+}
+
+fn initializr_deps_maven(deps: Option<&[String]>) -> String {
+    let default_deps = ["web", "actuator"];
+    let default_vec: Vec<String> = default_deps.iter().map(|s| s.to_string()).collect();
+    let list: &[String] = match deps {
+        Some(d) if !d.is_empty() => d,
+        _ => &default_vec,
+    };
+    let mut entries = Vec::new();
+    for dep in list {
+        match dep.as_str() {
+            "web" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "actuator" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "data-jpa" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "security" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "validation" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "devtools" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "thymeleaf" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "data-redis" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "kafka" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "postgresql" => entries.push(
+                r#"        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "mysql" => entries.push(
+                r#"        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "h2" => entries.push(
+                r#"        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "lombok" => entries.push(
+                r#"        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "docker-compose" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-docker-compose</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "testcontainers" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "graphql" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-graphql</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "websocket" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "mail" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            "quartz" => entries.push(
+                r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-quartz</artifactId>
+        </dependency>"#
+                    .to_string(),
+            ),
+            other => {
+                if other.starts_with("org.") || other.contains(':') {
+                    let parts: Vec<&str> = other.split(':').collect();
+                    if parts.len() >= 2 {
+                        entries.push(format!(
+                            r#"        <dependency>
+            <groupId>{}</groupId>
+            <artifactId>{}</artifactId>
+        </dependency>"#,
+                            parts[0], parts[1]
+                        ));
+                    } else {
+                        entries.push(format!(
+                            r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-{}</artifactId>
+        </dependency>"#,
+                            other
+                        ));
+                    }
+                } else {
+                    entries.push(format!(
+                        r#"        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-{}</artifactId>
+        </dependency>"#,
+                        other
+                    ));
+                }
+            }
+        }
+    }
+    entries.join("\n")
+}
+
 fn generate_gradle_kts(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let settings = format!("rootProject.name = \"{}\"\n", opts.name);
     fs::write(dest.join("settings.gradle.kts"), settings)?;
@@ -1286,9 +2321,15 @@ fn generate_gradle_kts(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let test_deps = test_dependencies_gradle_kts(opts.test_framework);
     let test_cfg = test_task_gradle_kts(opts.test_framework);
 
+    let groovy_plugin = if opts.test_framework == TestFramework::Spock {
+        "\n    groovy"
+    } else {
+        ""
+    };
+
     let (plugins, deps) = match opts.template {
         TemplateType::Cli => (
-            "    application\n    `java-library`".to_string(),
+            format!("    application\n    `java-library`{}", groovy_plugin),
             format!(
                 r#"{}
 
@@ -1299,7 +2340,7 @@ application {{
             ),
         ),
         TemplateType::Lib => (
-            "    `java-library`\n    `maven-publish`".to_string(),
+            format!("    `java-library`\n    `maven-publish`{}", groovy_plugin),
             test_deps.to_string(),
         ),
         TemplateType::SpringBoot => {
@@ -1310,18 +2351,24 @@ application {{
             } else {
                 ""
             };
+            let initializr_lines =
+                initializr_deps_gradle_kts(opts.initializr_dependencies.as_deref());
+            let spock_extra = if opts.test_framework == TestFramework::Spock {
+                format!("\n{}", test_deps)
+            } else {
+                String::new()
+            };
             (
                 format!(
                     r#"    java
     id("org.springframework.boot") version "{}"
-    id("io.spring.dependency-management") version "1.1.6""#,
-                    sb_ver
+    id("io.spring.dependency-management") version "1.1.6"{}"#,
+                    sb_ver, groovy_plugin
                 ),
                 format!(
-                    r#"    implementation("org.springframework.boot:spring-boot-starter-web")
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
-{}"#,
-                    sb_test
+                    r#"{}
+{}{}"#,
+                    initializr_lines, sb_test, spock_extra
                 ),
             )
         }
@@ -1333,17 +2380,22 @@ application {{
             } else {
                 ""
             };
+            let spock_extra = if opts.test_framework == TestFramework::Spock {
+                format!("\n{}", test_deps)
+            } else {
+                String::new()
+            };
             (
                 format!(
                     r#"    java
-    id("io.quarkus") version "{}"#,
-                    q_ver
+    id("io.quarkus") version "{}"{}"#,
+                    q_ver, groovy_plugin
                 ),
                 format!(
                     r#"    implementation(enforcedPlatform("io.quarkus.platform:quarkus-bom:{}"))
     implementation("io.quarkus:quarkus-resteasy-reactive")
-{}"#,
-                    q_ver, q_test
+{}{}"#,
+                    q_ver, q_test, spock_extra
                 ),
             )
         }
@@ -1354,23 +2406,28 @@ application {{
             } else {
                 ""
             };
+            let spock_extra = if opts.test_framework == TestFramework::Spock {
+                format!("\n{}", test_deps)
+            } else {
+                String::new()
+            };
             (
                 format!(
                     r#"    java
-    id("io.micronaut.application") version "{}"#,
-                    mn_ver
+    id("io.micronaut.application") version "{}"{}"#,
+                    mn_ver, groovy_plugin
                 ),
                 format!(
                     r#"    annotationProcessor("io.micronaut:micronaut-inject-java")
     implementation("io.micronaut:micronaut-http-server-netty")
     runtimeOnly("ch.qos.logback:logback-classic")
-{}"#,
-                    mn_test
+{}{}"#,
+                    mn_test, spock_extra
                 ),
             )
         }
         TemplateType::Javalin => (
-            "    application\n    java".to_string(),
+            format!("    application\n    java{}", groovy_plugin),
             format!(
                 r#"    implementation("io.javalin:javalin:6.3.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2")
@@ -1384,7 +2441,7 @@ application {{
             ),
         ),
         TemplateType::Grpc => (
-            "    application\n    java".to_string(),
+            format!("    application\n    java{}", groovy_plugin),
             format!(
                 r#"    implementation("io.grpc:grpc-netty-shaded:1.69.0")
     implementation("io.grpc:grpc-protobuf:1.69.0")
@@ -1400,7 +2457,7 @@ application {{
             ),
         ),
         TemplateType::Picocli => (
-            "    application\n    java".to_string(),
+            format!("    application\n    java{}", groovy_plugin),
             format!(
                 r#"    implementation("info.picocli:picocli:4.7.6")
     annotationProcessor("info.picocli:picocli-codegen:4.7.6")
@@ -1480,36 +2537,181 @@ fn generate_gradle_groovy(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let test_deps = test_dependencies_gradle_groovy(opts.test_framework);
     let test_cfg = test_task_gradle_groovy(opts.test_framework);
 
-    let deps = match opts.template {
-        TemplateType::Javalin => format!(
-            r#"    implementation 'io.javalin:javalin:6.3.0'
+    let groovy_plugin = if opts.test_framework == TestFramework::Spock {
+        "\n    id 'groovy'"
+    } else {
+        ""
+    };
+
+    let (plugins, deps, app_block) = match opts.template {
+        TemplateType::Cli => (
+            format!(
+                "    id 'application'\n    id 'java-library'{}",
+                groovy_plugin
+            ),
+            test_deps.to_string(),
+            format!(
+                r#"application {{
+    mainClass = '{}.App'
+}}"#,
+                opts.group_id
+            ),
+        ),
+        TemplateType::Lib => (
+            format!(
+                "    id 'java-library'\n    id 'maven-publish'{}",
+                groovy_plugin
+            ),
+            test_deps.to_string(),
+            String::new(),
+        ),
+        TemplateType::SpringBoot => {
+            let sb_ver = opts.framework_version.as_deref().unwrap_or("3.4.0");
+            let sb_test = if opts.test_framework != TestFramework::None {
+                r#"    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'"#
+            } else {
+                ""
+            };
+            let initializr_lines =
+                initializr_deps_gradle_groovy(opts.initializr_dependencies.as_deref());
+            let spock_extra = if opts.test_framework == TestFramework::Spock {
+                format!("\n{}", test_deps)
+            } else {
+                String::new()
+            };
+            (
+                format!(
+                    r#"    id 'java'
+    id 'org.springframework.boot' version '{}'
+    id 'io.spring.dependency-management' version '1.1.6'{}"#,
+                    sb_ver, groovy_plugin
+                ),
+                format!(
+                    r#"{}
+{}{}"#,
+                    initializr_lines, sb_test, spock_extra
+                ),
+                String::new(),
+            )
+        }
+        TemplateType::Quarkus => {
+            let q_ver = opts.framework_version.as_deref().unwrap_or("3.15.1");
+            let q_test = if opts.test_framework != TestFramework::None {
+                r#"    testImplementation 'io.quarkus:quarkus-junit5'
+    testImplementation 'io.rest-assured:rest-assured'"#
+            } else {
+                ""
+            };
+            let spock_extra = if opts.test_framework == TestFramework::Spock {
+                format!("\n{}", test_deps)
+            } else {
+                String::new()
+            };
+            (
+                format!(
+                    r#"    id 'java'
+    id 'io.quarkus' version '{}'{}"#,
+                    q_ver, groovy_plugin
+                ),
+                format!(
+                    r#"    implementation enforcedPlatform("io.quarkus.platform:quarkus-bom:{}")
+    implementation 'io.quarkus:quarkus-resteasy-reactive'
+{}{}"#,
+                    q_ver, q_test, spock_extra
+                ),
+                String::new(),
+            )
+        }
+        TemplateType::Micronaut => {
+            let mn_ver = opts.framework_version.as_deref().unwrap_or("4.4.2");
+            let mn_test = if opts.test_framework != TestFramework::None {
+                r#"    testImplementation 'io.micronaut.test:micronaut-test-junit5'"#
+            } else {
+                ""
+            };
+            let spock_extra = if opts.test_framework == TestFramework::Spock {
+                format!("\n{}", test_deps)
+            } else {
+                String::new()
+            };
+            (
+                format!(
+                    r#"    id 'java'
+    id 'io.micronaut.application' version '{}'{}"#,
+                    mn_ver, groovy_plugin
+                ),
+                format!(
+                    r#"    annotationProcessor 'io.micronaut:micronaut-inject-java'
+    implementation 'io.micronaut:micronaut-http-server-netty'
+    runtimeOnly 'ch.qos.logback:logback-classic'
+{}{}"#,
+                    mn_test, spock_extra
+                ),
+                String::new(),
+            )
+        }
+        TemplateType::Javalin => (
+            format!("    id 'application'\n    id 'java'{}", groovy_plugin),
+            format!(
+                r#"    implementation 'io.javalin:javalin:6.3.0'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
     implementation 'ch.qos.logback:logback-classic:1.5.16'
 {}"#,
-            test_deps
+                test_deps
+            ),
+            format!(
+                r#"application {{
+    mainClass = '{}.App'
+}}"#,
+                opts.group_id
+            ),
         ),
-        TemplateType::Picocli => format!(
-            r#"    implementation 'info.picocli:picocli:4.7.6'
-    annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
-{}"#,
-            test_deps
-        ),
-        TemplateType::Grpc => format!(
-            r#"    implementation 'io.grpc:grpc-netty-shaded:1.69.0'
+        TemplateType::Grpc => (
+            format!("    id 'application'\n    id 'java'{}", groovy_plugin),
+            format!(
+                r#"    implementation 'io.grpc:grpc-netty-shaded:1.69.0'
     implementation 'io.grpc:grpc-protobuf:1.69.0'
     implementation 'io.grpc:grpc-stub:1.69.0'
     compileOnly 'javax.annotation:javax.annotation-api:1.3.2'
     implementation 'ch.qos.logback:logback-classic:1.5.16'
 {}"#,
-            test_deps
+                test_deps
+            ),
+            format!(
+                r#"application {{
+    mainClass = '{}.App'
+}}"#,
+                opts.group_id
+            ),
         ),
-        _ => test_deps.to_string(),
+        TemplateType::Picocli => (
+            format!("    id 'application'\n    id 'java'{}", groovy_plugin),
+            format!(
+                r#"    implementation 'info.picocli:picocli:4.7.6'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
+{}"#,
+                test_deps
+            ),
+            format!(
+                r#"application {{
+    mainClass = '{}.App'
+}}"#,
+                opts.group_id
+            ),
+        ),
+        TemplateType::MultiModule => unreachable!(),
+    };
+
+    let app_section = if app_block.is_empty() {
+        String::new()
+    } else {
+        format!("\n{}\n", app_block)
     };
 
     let build = format!(
         r#"plugins {{
-    id 'application'
-    id 'java'
+{}
 }}
 
 group = '{}'
@@ -1540,14 +2742,10 @@ tasks.withType(Jar).configureEach {{
 dependencies {{
 {}
 }}
-
-application {{
-    mainClass = '{}.App'
-}}
-
+{}
 {}
 "#,
-        opts.group_id, j_ver, deps, opts.group_id, test_cfg
+        plugins, opts.group_id, j_ver, deps, app_section, test_cfg
     );
 
     fs::write(dest.join("build.gradle"), build)?;
@@ -1570,6 +2768,7 @@ application {{
 fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     let j_ver = effective_java_version(&opts.java_version);
     let test_deps = test_dependencies_maven(opts.test_framework);
+    let spock_plugin = gmavenplus_plugin_maven(opts.test_framework);
 
     let pom = match opts.template {
         TemplateType::SpringBoot => {
@@ -1582,6 +2781,12 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
         </dependency>"#
             } else {
                 ""
+            };
+            let initializr_entries = initializr_deps_maven(opts.initializr_dependencies.as_deref());
+            let spock_extra = if opts.test_framework == TestFramework::Spock {
+                format!("\n{}", test_deps)
+            } else {
+                String::new()
             };
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1608,14 +2813,8 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
     </properties>
 
     <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
-        </dependency>
+{}
+{}
 {}
     </dependencies>
 
@@ -1641,11 +2840,19 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
             </plugin>
+{}
         </plugins>
     </build>
 </project>
 "#,
-                sb_ver, opts.group_id, opts.name, j_ver, sb_test
+                sb_ver,
+                opts.group_id,
+                opts.name,
+                j_ver,
+                initializr_entries,
+                sb_test,
+                spock_extra,
+                spock_plugin
             )
         }
         TemplateType::Quarkus => {
@@ -1663,6 +2870,11 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
         </dependency>"#
             } else {
                 ""
+            };
+            let spock_extra = if opts.test_framework == TestFramework::Spock {
+                format!("\n{}", test_deps)
+            } else {
+                String::new()
             };
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1700,6 +2912,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
             <artifactId>quarkus-resteasy-reactive</artifactId>
         </dependency>
 {}
+{}
     </dependencies>
 
     <build>
@@ -1726,11 +2939,12 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
             </plugin>
+{}
         </plugins>
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, j_ver, q_ver, q_test
+                opts.group_id, opts.name, j_ver, q_ver, q_test, spock_extra, spock_plugin
             )
         }
         TemplateType::Micronaut => {
@@ -1743,6 +2957,11 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
         </dependency>"#
             } else {
                 ""
+            };
+            let spock_extra = if opts.test_framework == TestFramework::Spock {
+                format!("\n{}", test_deps)
+            } else {
+                String::new()
             };
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -1774,6 +2993,7 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
             <artifactId>micronaut-http-server-netty</artifactId>
         </dependency>
 {}
+{}
     </dependencies>
 
     <build>
@@ -1798,11 +3018,12 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
             </plugin>
+{}
         </plugins>
     </build>
 </project>
 "#,
-                mn_ver, opts.group_id, opts.name, j_ver, j_ver, mn_test
+                mn_ver, opts.group_id, opts.name, j_ver, j_ver, mn_test, spock_extra, spock_plugin
             )
         }
         TemplateType::Javalin => {
@@ -1882,11 +3103,12 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                     <mainClass>{}.App</mainClass>
                 </configuration>
             </plugin>
+{}
         </plugins>
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, compiler_prop, test_deps, opts.group_id
+                opts.group_id, opts.name, compiler_prop, test_deps, opts.group_id, spock_plugin
             )
         }
         TemplateType::Picocli => {
@@ -1963,11 +3185,12 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                     <mainClass>{}.App</mainClass>
                 </configuration>
             </plugin>
+{}
         </plugins>
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, compiler_prop, test_deps, opts.group_id
+                opts.group_id, opts.name, compiler_prop, test_deps, opts.group_id, spock_plugin
             )
         }
         TemplateType::Grpc => {
@@ -2058,11 +3281,12 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                     <mainClass>{}.App</mainClass>
                 </configuration>
             </plugin>
+{}
         </plugins>
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, compiler_prop, test_deps, opts.group_id
+                opts.group_id, opts.name, compiler_prop, test_deps, opts.group_id, spock_plugin
             )
         }
         _ => {
@@ -2137,11 +3361,12 @@ fn generate_pom_xml(dest: &Path, opts: &NewProjectOptions) -> Result<()> {
                 <version>3.4.2</version>
             </plugin>
 {}
+{}
         </plugins>
     </build>
 </project>
 "#,
-                opts.group_id, opts.name, compiler_prop, test_deps, extra_plugin
+                opts.group_id, opts.name, compiler_prop, test_deps, extra_plugin, spock_plugin
             )
         }
     };
@@ -2351,5 +3576,120 @@ mod tests {
         assert!(test_file.contains("import static org.assertj.core.api.Assertions.assertThat;"));
         let pom = fs::read_to_string(assertj_dir.join("pom.xml")).unwrap();
         assert!(pom.contains("assertj-core"));
+
+        // 3. Spock with Gradle Kts
+        let spock_gradle_dir = dir.path().join("spock-gradle");
+        let spock_gradle_opts = NewProjectOptions {
+            name: "spock-gradle".into(),
+            group_id: "com.example.spock".into(),
+            template: TemplateType::Cli,
+            build_tool: BuildToolChoice::GradleKts,
+            java_version: "21".into(),
+            distribution: None,
+            destination: spock_gradle_dir.clone(),
+            framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
+            test_framework: TestFramework::Spock,
+        };
+        generate_project(&spock_gradle_opts).await.unwrap();
+        assert!(spock_gradle_dir
+            .join("src/test/groovy/com/example/spock/AppSpec.groovy")
+            .is_file());
+        let kts = fs::read_to_string(spock_gradle_dir.join("build.gradle.kts")).unwrap();
+        assert!(kts.contains("groovy"));
+        assert!(kts.contains("spock-core"));
+
+        // 4. Spock with Maven
+        let spock_mvn_dir = dir.path().join("spock-mvn");
+        let spock_mvn_opts = NewProjectOptions {
+            name: "spock-mvn".into(),
+            group_id: "com.example.spockmvn".into(),
+            template: TemplateType::Cli,
+            build_tool: BuildToolChoice::Maven,
+            java_version: "21".into(),
+            distribution: None,
+            destination: spock_mvn_dir.clone(),
+            framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
+            test_framework: TestFramework::Spock,
+        };
+        generate_project(&spock_mvn_opts).await.unwrap();
+        assert!(spock_mvn_dir
+            .join("src/test/groovy/com/example/spockmvn/AppSpec.groovy")
+            .is_file());
+        let pom = fs::read_to_string(spock_mvn_dir.join("pom.xml")).unwrap();
+        assert!(pom.contains("spock-core"));
+        assert!(pom.contains("gmavenplus-plugin"));
+
+        // 5. TestNG with Maven
+        let testng_dir = dir.path().join("testng-mvn");
+        let testng_opts = NewProjectOptions {
+            name: "testng-mvn".into(),
+            group_id: "com.example.testng".into(),
+            template: TemplateType::Cli,
+            build_tool: BuildToolChoice::Maven,
+            java_version: "21".into(),
+            distribution: None,
+            destination: testng_dir.clone(),
+            framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
+            test_framework: TestFramework::TestNG,
+        };
+        generate_project(&testng_opts).await.unwrap();
+        let test_file =
+            fs::read_to_string(testng_dir.join("src/test/java/com/example/testng/AppTest.java"))
+                .unwrap();
+        assert!(test_file.contains("import org.testng.annotations.Test;"));
+        let pom = fs::read_to_string(testng_dir.join("pom.xml")).unwrap();
+        assert!(pom.contains("<groupId>org.testng</groupId>"));
+
+        // 6. Spring Boot with custom initializr dependencies
+        let spring_dir = dir.path().join("spring-deps");
+        let spring_opts = NewProjectOptions {
+            name: "spring-deps".into(),
+            group_id: "com.example.springdeps".into(),
+            template: TemplateType::SpringBoot,
+            build_tool: BuildToolChoice::GradleKts,
+            java_version: "21".into(),
+            distribution: None,
+            destination: spring_dir.clone(),
+            framework_version: None,
+            initializr_dependencies: Some(vec![
+                "web".into(),
+                "data-jpa".into(),
+                "postgresql".into(),
+                "security".into(),
+            ]),
+            skip_initializr: true,
+            test_framework: TestFramework::JUnit5,
+        };
+        generate_project(&spring_opts).await.unwrap();
+        let kts = fs::read_to_string(spring_dir.join("build.gradle.kts")).unwrap();
+        assert!(kts.contains("spring-boot-starter-data-jpa"));
+        assert!(kts.contains("postgresql"));
+        assert!(kts.contains("spring-boot-starter-security"));
+
+        // 7. Gradle Groovy for Spring Boot
+        let groovy_sb_dir = dir.path().join("groovy-sb");
+        let groovy_sb_opts = NewProjectOptions {
+            name: "groovy-sb".into(),
+            group_id: "com.example.groovysb".into(),
+            template: TemplateType::SpringBoot,
+            build_tool: BuildToolChoice::GradleGroovy,
+            java_version: "21".into(),
+            distribution: None,
+            destination: groovy_sb_dir.clone(),
+            framework_version: None,
+            initializr_dependencies: None,
+            skip_initializr: true,
+            test_framework: TestFramework::JUnit5,
+        };
+        generate_project(&groovy_sb_opts).await.unwrap();
+        let build_gradle = fs::read_to_string(groovy_sb_dir.join("build.gradle")).unwrap();
+        assert!(build_gradle.contains("id 'org.springframework.boot'"));
+        assert!(build_gradle.contains("spring-boot-starter-web"));
     }
 }

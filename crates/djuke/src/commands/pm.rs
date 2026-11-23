@@ -141,7 +141,7 @@ pub async fn handle_add(
             add_maven_dependency(&pom_path, &spec)?;
             println!("✓ Added {} to pom.xml", spec.to_string().green().bold());
         }
-        Some(BuildTool::Gradle) | None => {
+        Some(BuildTool::Gradle) => {
             let kts = config.project_root.join("build.gradle.kts");
             let groovy = config.project_root.join("build.gradle");
             let build_file = if kts.is_file() {
@@ -160,6 +160,13 @@ pub async fn handle_add(
                 spec.to_string().green().bold(),
                 build_file.file_name().unwrap_or_default().to_string_lossy()
             );
+        }
+        None => {
+            return Err(DjukeError::NoBuildToolFound(format!(
+                "Cannot add dependency: no Maven or Gradle project detected in '{}'. Run 'djuke new' or 'djuke init' to start a project.",
+                current_dir.display()
+            ))
+            .into());
         }
     }
 
@@ -237,7 +244,7 @@ pub fn handle_remove(
             remove_maven_dependency(&pom_path, &group, &artifact)?;
             println!("✓ Removed {}:{} from pom.xml", group, artifact);
         }
-        Some(BuildTool::Gradle) | None => {
+        Some(BuildTool::Gradle) => {
             let kts = config.project_root.join("build.gradle.kts");
             let groovy = config.project_root.join("build.gradle");
             let build_file = if kts.is_file() { kts } else { groovy };
@@ -248,6 +255,13 @@ pub fn handle_remove(
                 artifact,
                 build_file.file_name().unwrap_or_default().to_string_lossy()
             );
+        }
+        None => {
+            return Err(DjukeError::NoBuildToolFound(format!(
+                "Cannot remove dependency: no Maven or Gradle project detected in '{}'.",
+                current_dir.display()
+            ))
+            .into());
         }
     }
 

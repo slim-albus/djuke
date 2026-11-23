@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use djuke_core::DjukePaths;
-use djuke_core::{BuildTool, JdkDistribution, JdkSpec, TaskMap};
+use djuke_core::{BuildTool, JdkSpec, TaskMap};
 
 use crate::detect::detect_project_markers;
 use crate::global::load_global_config;
@@ -26,7 +26,7 @@ impl std::fmt::Display for JdkResolutionSource {
             Self::ProjectManifest(p) => write!(f, "Project manifest ({})", p.display()),
             Self::ProjectMarkerFile(s) => write!(f, "Project version file ({})", s),
             Self::GlobalConfig(p) => write!(f, "Global config ({})", p.display()),
-            Self::FallbackDefault => write!(f, "Default fallback (temurin@21)"),
+            Self::FallbackDefault => write!(f, "Default fallback"),
         }
     }
 }
@@ -59,6 +59,8 @@ pub fn resolve_project_config_with_tool(
     paths: &DjukePaths,
 ) -> ResolvedProjectConfig {
     let global_config = load_global_config(&paths.config_file()).unwrap_or_default();
+    let default_distro = global_config.default_distribution();
+    let default_version = global_config.default_java_version();
     let markers = detect_project_markers(start_dir);
     let manifest_path = find_manifest_file(&markers.root);
 
@@ -72,20 +74,18 @@ pub fn resolve_project_config_with_tool(
         let (d, v) = if let Ok(spec) = cli_val.parse::<JdkSpec>() {
             (spec.distribution, spec.version)
         } else {
-            (JdkDistribution::default_distro(), cli_val.to_string())
+            (default_distro, cli_val.to_string())
         };
         (d, v, JdkResolutionSource::CliFlag)
     } else if let Ok(env_val) = std::env::var("DJUKE_JAVA") {
         let (d, v) = if let Ok(spec) = env_val.parse::<JdkSpec>() {
             (spec.distribution, spec.version)
         } else {
-            (JdkDistribution::default_distro(), env_val)
+            (default_distro, env_val)
         };
         (d, v, JdkResolutionSource::EnvironmentVariable)
     } else if let Some(java_sec) = &manifest.java {
-        let d = java_sec
-            .distribution
-            .unwrap_or_else(JdkDistribution::default_distro);
+        let d = java_sec.distribution.unwrap_or(default_distro);
         let path = manifest_path
             .clone()
             .unwrap_or_else(|| markers.root.join("djuke.toml"));
@@ -96,23 +96,20 @@ pub fn resolve_project_config_with_tool(
         )
     } else if let Some(inferred_ver) = &markers.inferred_java_version {
         (
-            JdkDistribution::default_distro(),
+            default_distro,
             inferred_ver.clone(),
             JdkResolutionSource::ProjectMarkerFile(".java-version / .sdkmanrc".into()),
         )
-    } else if let Some(g_java) = &global_config.java {
-        let d = g_java
-            .default_distribution
-            .unwrap_or_else(JdkDistribution::default_distro);
-        let v = g_java
-            .default_version
-            .clone()
-            .unwrap_or_else(|| "21".to_string());
-        (d, v, JdkResolutionSource::GlobalConfig(paths.config_file()))
+    } else if global_config.java.is_some() || global_config.defaults.is_some() {
+        (
+            default_distro,
+            default_version,
+            JdkResolutionSource::GlobalConfig(paths.config_file()),
+        )
     } else {
         (
-            JdkDistribution::default_distro(),
-            "21".to_string(),
+            default_distro,
+            default_version,
             JdkResolutionSource::FallbackDefault,
         )
     };

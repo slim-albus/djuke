@@ -1,5 +1,6 @@
 pub mod build;
 pub mod cache;
+pub mod config;
 pub mod doctor;
 pub mod env;
 pub mod java;

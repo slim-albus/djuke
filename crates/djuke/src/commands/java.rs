@@ -30,6 +30,10 @@ pub async fn handle_use_command(
 
     let store = JdkStore::new(paths.clone());
     let installed = store.list_installed()?;
+    let global_cfg =
+        djuke_config::global::load_global_config(&paths.config_file()).unwrap_or_default();
+    let default_distro = global_cfg.default_distribution();
+    let default_version = global_cfg.default_java_version();
 
     let (chosen_spec, chosen_distro) = match spec {
         Some(s) => (s, distro),
@@ -37,12 +41,19 @@ pub async fn handle_use_command(
             if is_interactive {
                 if installed.is_empty() {
                     println!("{}", "No JDKs currently installed locally.".yellow().bold());
+                    let opt1 = format!("{} {} (default LTS)", default_distro, default_version);
+                    let opt2 = format!("{} 25 (Next-gen LTS)", default_distro);
+                    let opt3 = format!("{} 17 (Enterprise baseline)", default_distro);
+                    let opt4 = "Eclipse Temurin 21 (Adoptium standard)".to_string();
+                    let opt5 = "Amazon Corretto 21 (AWS runtime)".to_string();
+                    let opt6 = "Custom version & distribution...".to_string();
                     let install_options = [
-                        "OpenJDK 21 (Default reference build)",
-                        "Eclipse Temurin 21 (LTS baseline)",
-                        "Eclipse Temurin 25 (Next-gen LTS)",
-                        "Eclipse Temurin 17 (Legacy LTS)",
-                        "Custom version & distribution...",
+                        opt1.as_str(),
+                        opt2.as_str(),
+                        opt3.as_str(),
+                        opt4.as_str(),
+                        opt5.as_str(),
+                        opt6.as_str(),
                     ];
                     let idx = dialoguer::Select::with_theme(&theme)
                         .with_prompt("Select a JDK to download, install, and set as default")
@@ -53,21 +64,22 @@ pub async fn handle_use_command(
                         .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
 
                     match idx {
-                        0 => ("21".to_string(), Some(JdkDistribution::OpenJdk)),
-                        1 => ("21".to_string(), Some(JdkDistribution::Temurin)),
-                        2 => ("25".to_string(), Some(JdkDistribution::Temurin)),
-                        3 => ("17".to_string(), Some(JdkDistribution::Temurin)),
-                        4 => {
+                        0 => (default_version, Some(default_distro)),
+                        1 => ("25".to_string(), Some(default_distro)),
+                        2 => ("17".to_string(), Some(default_distro)),
+                        3 => ("21".to_string(), Some(JdkDistribution::Temurin)),
+                        4 => ("21".to_string(), Some(JdkDistribution::Corretto)),
+                        5 => {
                             let ver: String = dialoguer::Input::with_theme(&theme)
                                 .with_prompt("Target Java version (e.g. 21, 23, 25)")
-                                .default("21".to_string())
+                                .default(default_version)
                                 .interact_text()
                                 .map_err(|e| {
                                     DjukeError::Process(format!("Prompt failed: {}", e))
                                 })?;
-                            (ver, distro.or(Some(JdkDistribution::default_distro())))
+                            (ver, distro.or(Some(default_distro)))
                         }
-                        _ => ("21".to_string(), Some(JdkDistribution::default_distro())),
+                        _ => (default_version, Some(default_distro)),
                     }
                 } else {
                     let mut items: Vec<String> = installed
@@ -92,10 +104,10 @@ pub async fn handle_use_command(
                             .with_prompt(
                                 "Enter Java version to download & install (e.g. 21, 23, 25)",
                             )
-                            .default("21".to_string())
+                            .default(default_version)
                             .interact_text()
                             .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
-                        (ver, distro.or(Some(JdkDistribution::default_distro())))
+                        (ver, distro.or(Some(default_distro)))
                     }
                 }
             } else if !installed.is_empty() {
@@ -111,7 +123,12 @@ pub async fn handle_use_command(
         }
     };
 
-    let mut parsed_spec: JdkSpec = chosen_spec.parse()?;
+    let mut parsed_spec: JdkSpec = if let Some((d_str, v_str)) = chosen_spec.split_once('@') {
+        let d = d_str.parse()?;
+        JdkSpec::new(d, v_str)
+    } else {
+        JdkSpec::new(chosen_distro.unwrap_or(default_distro), &chosen_spec)
+    };
     if let Some(d) = chosen_distro {
         parsed_spec.distribution = d;
     }
@@ -173,10 +190,15 @@ pub async fn handle_java(
             distro,
         } => {
             let store = JdkStore::new(paths.clone());
+            let global_config =
+                djuke_config::global::load_global_config(&paths.config_file()).unwrap_or_default();
+            let default_d = global_config.default_distribution();
+            let default_v = global_config.default_java_version();
+
             if remote {
                 let disco = DiscoClient::new();
                 let platform = Platform::current();
-                let query_distro = distro.unwrap_or_else(JdkDistribution::default_distro);
+                let query_distro = distro.unwrap_or(default_d);
 
                 println!(
                     "{}",
@@ -245,17 +267,22 @@ pub async fn handle_java(
             } else {
                 let installed = store.list_installed()?;
                 let config = resolve_project_config(current_dir, None, paths);
-                let global_config = djuke_config::global::load_global_config(&paths.config_file())
-                    .unwrap_or_default();
-                let g_pref = global_config.java.as_ref().map(|j| {
-                    (
-                        j.default_distribution
-                            .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
-                        j.default_version
-                            .clone()
-                            .unwrap_or_else(|| "21".to_string()),
-                    )
-                });
+
+                // Auto-detect if current directory is actually a project folder
+                let is_from_project = matches!(
+                    config.jdk_source,
+                    djuke_config::JdkResolutionSource::ProjectManifest(_)
+                        | djuke_config::JdkResolutionSource::ProjectMarkerFile(_)
+                );
+                let project_active_id = if is_from_project {
+                    store.find_installed(&config.jdk_spec).map(|j| j.id)
+                } else {
+                    None
+                };
+
+                let global_default_id = store
+                    .find_installed(&djuke_core::JdkSpec::new(default_d, default_v.clone()))
+                    .map(|j| j.id);
 
                 if json {
                     let s = serde_json::to_string_pretty(&installed)
@@ -265,24 +292,17 @@ pub async fn handle_java(
                     println!("No JDKs installed in {}.", paths.jdks_dir().display());
                     println!(
                         "Run '{}' to install a recommended JDK.",
-                        "djuke java install 21".green()
+                        format!("djuke jdk install {}", default_v).green()
                     );
                 } else {
                     println!("{}", "Installed JDKs:".bold().cyan());
                     for jdk in installed {
-                        let is_active = (jdk.distribution == config.jdk_spec.distribution
-                            && jdk.version == config.jdk_spec.version)
-                            || jdk.version.starts_with(&config.jdk_spec.version);
-                        let is_global = if let Some((g_distro, g_ver)) = &g_pref {
-                            (jdk.distribution == *g_distro && jdk.version == *g_ver)
-                                || jdk.version.starts_with(g_ver)
-                        } else {
-                            false
-                        };
+                        let is_active = project_active_id.as_deref() == Some(&jdk.id);
+                        let is_global = global_default_id.as_deref() == Some(&jdk.id);
 
                         let mut badges = Vec::new();
                         if is_active {
-                            badges.push("* [active: project]".green().bold().to_string());
+                            badges.push("* [project]".green().bold().to_string());
                         }
                         if is_global {
                             badges.push("+ [default: global]".cyan().bold().to_string());
@@ -309,18 +329,29 @@ pub async fn handle_java(
         }
 
         JdkSubcommands::Install { spec, distro } => {
+            let global_cfg =
+                djuke_config::global::load_global_config(&paths.config_file()).unwrap_or_default();
+            let default_distro = global_cfg.default_distribution();
+            let default_version = global_cfg.default_java_version();
+
             let target_spec = match spec {
                 Some(s) if !s.trim().is_empty() => s,
                 _ => {
                     if std::io::stdin().is_terminal() {
                         let theme = dialoguer::theme::ColorfulTheme::default();
+                        let opt1 = format!("{} {} (default LTS)", default_distro, default_version);
+                        let opt2 = format!("{} 25 (Next-gen LTS)", default_distro);
+                        let opt3 = format!("{} 17 (Enterprise baseline)", default_distro);
+                        let opt4 = "Eclipse Temurin 21 (Adoptium standard)".to_string();
+                        let opt5 = "Amazon Corretto 21 (AWS runtime)".to_string();
+                        let opt6 = "Custom specification...".to_string();
                         let options = [
-                            "Eclipse Temurin 21 (LTS standard)",
-                            "Eclipse Temurin 25 (Next-gen LTS)",
-                            "Eclipse Temurin 17 (Legacy LTS)",
-                            "Oracle OpenJDK 21 (Official build)",
-                            "Amazon Corretto 21 (AWS runtime)",
-                            "Custom specification...",
+                            opt1.as_str(),
+                            opt2.as_str(),
+                            opt3.as_str(),
+                            opt4.as_str(),
+                            opt5.as_str(),
+                            opt6.as_str(),
                         ];
                         let idx = dialoguer::Select::with_theme(&theme)
                             .with_prompt("Select a JDK to download and install")
@@ -331,10 +362,10 @@ pub async fn handle_java(
                             .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
 
                         match idx {
-                            0 => "21".to_string(),
+                            0 => default_version,
                             1 => "25".to_string(),
                             2 => "17".to_string(),
-                            3 => "openjdk@21".to_string(),
+                            3 => "temurin@21".to_string(),
                             4 => "corretto@21".to_string(),
                             _ => {
                                 let input: String = dialoguer::Input::with_theme(&theme)
@@ -347,12 +378,18 @@ pub async fn handle_java(
                             }
                         }
                     } else {
-                        "21".to_string()
+                        default_version
                     }
                 }
             };
 
-            let mut parsed_spec: JdkSpec = target_spec.parse()?;
+            let mut parsed_spec: JdkSpec = if let Some((d_str, v_str)) = target_spec.split_once('@')
+            {
+                let d = d_str.parse()?;
+                JdkSpec::new(d, v_str)
+            } else {
+                JdkSpec::new(distro.unwrap_or(default_distro), &target_spec)
+            };
             if let Some(d) = distro {
                 parsed_spec.distribution = d;
             }
@@ -374,92 +411,119 @@ pub async fn handle_java(
 
         JdkSubcommands::Default { spec, distro } => {
             let mut cfg = djuke_config::global::load_global_config(&paths.config_file())?;
-            match spec {
-                None => match &cfg.java {
-                    Some(j) => {
-                        let d = j
-                            .default_distribution
-                            .unwrap_or_else(djuke_core::JdkDistribution::default_distro);
-                        let v = j
-                            .default_version
-                            .clone()
-                            .unwrap_or_else(|| "21".to_string());
-                        let source = format!("Config file ({})", paths.config_file().display());
-                        let store = JdkStore::new(paths.clone());
-                        let global_spec = djuke_core::JdkSpec::new(d, v.clone());
-                        let installed = store.find_installed(&global_spec);
+            let current_default_distro = cfg.default_distribution();
+            let current_default_ver = cfg.default_java_version();
 
-                        if json {
-                            let json_data = serde_json::json!({
-                                "configured": true,
-                                "distribution": d.to_string(),
-                                "version": v,
-                                "source": source,
-                                "installed": installed.is_some(),
-                                "java_home": installed.as_ref().map(|i| i.java_home.display().to_string()),
-                            });
-                            let s = serde_json::to_string_pretty(&json_data).map_err(|e| {
-                                djuke_core::DjukeError::Serialization(e.to_string())
-                            })?;
-                            println!("{}", s);
-                        } else {
-                            println!("{}", "Global Default Java Configuration:".bold().cyan());
-                            println!("  • Runtime:    {}", format!("{}@{}", d, v).green().bold());
-                            println!("  • Source:     {}", source);
-                            if let Some(i) = installed {
-                                println!(
-                                    "  • Status:     {} ({})",
-                                    "Installed".green().bold(),
-                                    i.java_home.display()
-                                );
-                            } else {
-                                println!(
-                                    "  • Status:     {}",
-                                    "Not installed locally".yellow().bold()
-                                );
-                                println!(
-                                    "  Run '{}' to install and activate.",
-                                    format!("djuke use --global {}", v).green()
-                                );
-                            }
-                        }
+            let (target_version, target_distro) = match (&spec, distro) {
+                (None, Some(d)) => (None, Some(d)),
+                (None, None) => (None, None),
+                (Some(s), explicit_distro) => {
+                    let trimmed = s.trim();
+                    if let Ok(d) = trimmed.parse::<djuke_core::JdkDistribution>() {
+                        (None, Some(explicit_distro.unwrap_or(d)))
+                    } else if let Ok(parsed_spec) = trimmed.parse::<djuke_core::JdkSpec>() {
+                        let d = explicit_distro.unwrap_or(parsed_spec.distribution);
+                        (Some(parsed_spec.version), Some(d))
+                    } else {
+                        let d = explicit_distro.unwrap_or(current_default_distro);
+                        (Some(trimmed.to_string()), Some(d))
                     }
-                    None => {
-                        if json {
-                            let json_data = serde_json::json!({
-                                "configured": false,
-                                "message": "No global default Java configured. Run 'djuke use --global' to set one.",
-                            });
-                            let s = serde_json::to_string_pretty(&json_data).map_err(|e| {
-                                djuke_core::DjukeError::Serialization(e.to_string())
-                            })?;
-                            println!("{}", s);
-                        } else {
-                            println!("{}", "Global Default Java Configuration:".bold().cyan());
-                            println!("  • Runtime:    {}", "Not configured".yellow().bold());
-                            println!(
-                                "  Run '{}' to set your preferred global Java runtime.",
-                                "djuke use --global".green()
-                            );
-                        }
+                }
+            };
+
+            if target_version.is_none() && target_distro.is_none() {
+                let d = current_default_distro;
+                let v = current_default_ver;
+                let has_config = cfg.java.is_some() || cfg.defaults.is_some();
+                let source = if has_config {
+                    format!("Config file ({})", paths.config_file().display())
+                } else {
+                    "System fallback defaults".to_string()
+                };
+                let store = JdkStore::new(paths.clone());
+                let global_spec = djuke_core::JdkSpec::new(d, v.clone());
+                let installed = store.find_installed(&global_spec);
+
+                if json {
+                    let json_data = serde_json::json!({
+                        "configured": has_config,
+                        "distribution": d.to_string(),
+                        "version": v,
+                        "source": source,
+                        "installed": installed.is_some(),
+                        "java_home": installed.as_ref().map(|i| i.java_home.display().to_string()),
+                    });
+                    let s = serde_json::to_string_pretty(&json_data)
+                        .map_err(|e| djuke_core::DjukeError::Serialization(e.to_string()))?;
+                    println!("{}", s);
+                } else {
+                    println!("{}", "Global Default Java Configuration:".bold().cyan());
+                    let label = if has_config {
+                        format!("{}@{}", d, v).green().bold()
+                    } else {
+                        format!("{}@{} (default fallback)", d, v).yellow().bold()
+                    };
+                    println!("  • Runtime:      {}", label);
+                    println!("  • Distribution: {}", d.to_string().cyan());
+                    println!("  • Version:      {}", v.cyan());
+                    println!("  • Source:       {}", source);
+                    if let Some(i) = installed {
+                        println!(
+                            "  • Status:       {} ({})",
+                            "Installed".green().bold(),
+                            i.java_home.display()
+                        );
+                    } else {
+                        println!(
+                            "  • Status:       {}",
+                            "Not installed locally".yellow().bold()
+                        );
+                        println!(
+                            "  Run '{}' to install and activate.",
+                            format!("djuke jdk install {}@{}", d, v).green()
+                        );
                     }
-                },
-                Some(s) => {
-                    let mut parsed_spec: JdkSpec = s.parse()?;
-                    if let Some(d) = distro {
-                        parsed_spec.distribution = d;
-                    }
-                    let installed = resolve_jdk(&parsed_spec, paths, true, quiet).await?;
-                    let mut j = cfg.java.unwrap_or_default();
-                    j.default_version = Some(parsed_spec.version.clone());
-                    j.default_distribution = Some(parsed_spec.distribution);
-                    cfg.java = Some(j);
-                    djuke_config::global::save_global_config(&paths.config_file(), &cfg)?;
+                }
+            } else if let Some(v) = target_version {
+                let d = target_distro.unwrap_or(current_default_distro);
+                let spec_to_install = djuke_core::JdkSpec::new(d, v.clone());
+                let installed = resolve_jdk(&spec_to_install, paths, true, quiet).await?;
+                let mut j = cfg.java.unwrap_or_default();
+                j.default_version = Some(v);
+                j.default_distribution = Some(d);
+                cfg.java = Some(j);
+                djuke_config::global::save_global_config(&paths.config_file(), &cfg)?;
+                println!(
+                    "✓ Set global default Java to {}",
+                    format!("{}@{}", d, installed.version).green().bold()
+                );
+                println!("  JAVA_HOME: {}", installed.java_home.display());
+            } else if let Some(d) = target_distro {
+                let mut j = cfg.java.unwrap_or_default();
+                j.default_distribution = Some(d);
+                let current_v = current_default_ver;
+                j.default_version = Some(current_v.clone());
+                cfg.java = Some(j);
+                djuke_config::global::save_global_config(&paths.config_file(), &cfg)?;
+                println!(
+                    "✓ Set global default JDK distribution to {}",
+                    d.to_string().green().bold()
+                );
+                let store = JdkStore::new(paths.clone());
+                let global_spec = djuke_core::JdkSpec::new(d, current_v.clone());
+                if let Some(installed) = store.find_installed(&global_spec) {
                     println!(
-                        "✓ Set global default Java to {}@{}",
-                        parsed_spec.distribution, parsed_spec.version
+                        "  Active global runtime: {} ({})",
+                        format!("{}@{}", d, installed.version).green(),
+                        installed.java_home.display()
                     );
-                    println!("  JAVA_HOME: {}", installed.java_home.display());
+                } else {
+                    println!(
+                        "  Note: {}@{} is not installed locally. Run '{}' to download it.",
+                        d,
+                        current_v,
+                        format!("djuke jdk install {}@{}", d, current_v).green()
+                    );
                 }
             }
         }
@@ -477,12 +541,19 @@ pub async fn handle_java(
             let store = JdkStore::new(paths.clone());
             let installed = store.find_installed(&config.jdk_spec);
 
+            let is_project = matches!(
+                config.jdk_source,
+                djuke_config::JdkResolutionSource::ProjectManifest(_)
+                    | djuke_config::JdkResolutionSource::ProjectMarkerFile(_)
+            );
+
             if json {
                 let json_data = serde_json::json!({
                     "spec": format!("{}", config.jdk_spec),
                     "distribution": config.jdk_spec.distribution.to_string(),
                     "version": config.jdk_spec.version,
                     "resolution_source": format!("{}", config.jdk_source),
+                    "is_project": is_project,
                     "installed": installed.is_some(),
                     "java_home": installed.as_ref().map(|i| i.java_home.display().to_string())
                 });
@@ -490,6 +561,12 @@ pub async fn handle_java(
                     .map_err(|e| djuke_core::DjukeError::Serialization(e.to_string()))?;
                 println!("{}", s);
             } else if let Some(i) = installed {
+                if !is_project {
+                    println!(
+                        "{}",
+                        "(No project detected in current directory; using global default)".dimmed()
+                    );
+                }
                 println!(
                     "Java runtime: {} -> {}",
                     format!("{}@{}", i.distribution, i.version).green().bold(),
@@ -497,6 +574,12 @@ pub async fn handle_java(
                 );
                 println!("Resolved from: {}", format!("{}", config.jdk_source).cyan());
             } else {
+                if !is_project {
+                    println!(
+                        "{}",
+                        "(No project detected in current directory; using global default)".dimmed()
+                    );
+                }
                 println!(
                     "Configured Java: {} (not installed locally)",
                     format!("{}", config.jdk_spec).yellow()

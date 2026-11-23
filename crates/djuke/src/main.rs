@@ -123,6 +123,9 @@ async fn main() -> Result<()> {
         Commands::Cache(cache_args) => {
             commands::cache::handle_cache(cache_args, &paths, cli.json)?;
         }
+        Commands::Config(config_args) => {
+            commands::config::handle_config(config_args, &paths, cli.json)?;
+        }
         Commands::Setup { tool, distro, spec } => {
             commands::project::handle_setup(tool, distro, spec, &current_dir, &paths, cli.quiet)
                 .await?;

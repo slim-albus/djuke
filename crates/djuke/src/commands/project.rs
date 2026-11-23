@@ -115,10 +115,12 @@ pub async fn handle_new(
         }
     }
 
+    let global_cfg =
+        djuke_config::global::load_global_config(&paths.config_file()).unwrap_or_default();
+    let default_distro = global_cfg.default_distribution();
+
     let jdk_spec = djuke_core::JdkSpec {
-        distribution: init_opts
-            .distro_choice
-            .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
+        distribution: init_opts.distro_choice.unwrap_or(default_distro),
         version: java_str,
     };
     if let Ok(installed_jdk) = resolve_jdk(&jdk_spec, paths, true, quiet).await {
@@ -233,10 +235,12 @@ pub async fn handle_init(
         }
     }
 
+    let global_cfg =
+        djuke_config::global::load_global_config(&paths.config_file()).unwrap_or_default();
+    let default_distro = global_cfg.default_distribution();
+
     let jdk_spec = djuke_core::JdkSpec {
-        distribution: init_opts
-            .distro_choice
-            .unwrap_or_else(djuke_core::JdkDistribution::default_distro),
+        distribution: init_opts.distro_choice.unwrap_or(default_distro),
         version: java_str,
     };
     if let Ok(installed_jdk) = resolve_jdk(&jdk_spec, paths, true, quiet).await {
@@ -332,21 +336,35 @@ pub async fn handle_setup(
                 wrapper_status = "generated & primed";
             }
         }
+    } else {
+        wrapper_status = "none";
     }
 
-    println!("\n{}", "Project Environment Ready:".green().bold());
-    println!(
-        "  • Java:       {} ({})",
-        installed_jdk.version.green(),
-        installed_jdk.distribution
-    );
-    println!("  • JAVA_HOME:  {}", installed_jdk.java_home.display());
-    println!(
-        "  • Build Tool: {} (wrapper: {})",
-        tool_str.cyan(),
-        wrapper_status
-    );
-    println!("\nRun '{}' to build the project.", "djuke build".bold());
+    if config.build_tool.is_some() || config.manifest_path.is_some() {
+        println!("\n{}", "Project Environment Ready:".green().bold());
+        println!(
+            "  • Java:       {} ({})",
+            installed_jdk.version.green(),
+            installed_jdk.distribution
+        );
+        println!("  • JAVA_HOME:  {}", installed_jdk.java_home.display());
+        println!(
+            "  • Build Tool: {} (wrapper: {})",
+            tool_str.cyan(),
+            wrapper_status
+        );
+        println!("\nRun '{}' to build the project.", "djuke build".bold());
+    } else {
+        println!("\n{}", "Environment Ready:".green().bold());
+        println!(
+            "  • Java:       {} ({})",
+            installed_jdk.version.green(),
+            installed_jdk.distribution
+        );
+        println!("  • JAVA_HOME:  {}", installed_jdk.java_home.display());
+        println!("  • Context:    Non-project directory (global JDK primed)");
+        println!("\nRun '{}' to create a new project.", "djuke new".bold());
+    }
 
     Ok(())
 }

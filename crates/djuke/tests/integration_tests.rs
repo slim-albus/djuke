@@ -370,11 +370,8 @@ async fn test_doctor_reports_unready_when_no_jdk_installed() {
         !jdk_check.status,
         "Installed JDKs check must fail when store is empty"
     );
-    assert!(jdk_check
-        .hint
-        .as_ref()
-        .unwrap()
-        .contains("djuke java install"));
+    let hint = jdk_check.hint.as_ref().unwrap();
+    assert!(hint.contains("djuke jdk install") || hint.contains("djuke java install"));
 }
 
 #[test]

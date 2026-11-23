@@ -22,7 +22,6 @@ pub async fn run_task(
     tool_override: Option<BuildTool>,
 ) -> Result<()> {
     let config = resolve_project_config_with_tool(current_dir, None, tool_override, paths);
-    let installed_jdk = resolve_jdk(&config.jdk_spec, paths, true, quiet).await?;
 
     let tool = config.build_tool.ok_or_else(|| {
         DjukeError::NoBuildToolFound(format!(
@@ -31,6 +30,8 @@ pub async fn run_task(
             current_dir.display()
         ))
     })?;
+
+    let installed_jdk = resolve_jdk(&config.jdk_spec, paths, true, quiet).await?;
 
     let task_cmd = config
         .tasks
