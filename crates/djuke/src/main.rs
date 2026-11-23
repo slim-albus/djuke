@@ -2476,7 +2476,7 @@ async fn main() -> Result<()> {
             let config = resolve_project_config(&current_dir, None, &paths);
             let store = JdkStore::new(paths.clone());
             if let Some(installed) = store.find_installed(&config.jdk_spec) {
-                let java_home = installed.java_home.display();
+                let java_home = installed.java_home.display().to_string();
                 let bin_dir = installed.java_home.join("bin").display().to_string();
                 let shell_type = shell.unwrap_or_else(|| {
                     if cfg!(windows) {
@@ -2496,12 +2496,22 @@ async fn main() -> Result<()> {
                         println!("set \"PATH={};%PATH%\"", bin_dir);
                     }
                     "fish" => {
-                        println!("set -gx JAVA_HOME \"{}\"", java_home);
-                        println!("set -gx PATH \"{}\" $PATH", bin_dir);
+                        let posix_home = java_home.replace('\\', "/");
+                        let posix_bin = bin_dir.replace('\\', "/");
+                        println!("set -gx JAVA_HOME \"{}\"", posix_home);
+                        println!("set -gx PATH \"{}\" $PATH", posix_bin);
+                    }
+                    "nu" | "nushell" => {
+                        let posix_home = java_home.replace('\\', "/");
+                        let posix_bin = bin_dir.replace('\\', "/");
+                        println!("$env.JAVA_HOME = \"{}\"", posix_home);
+                        println!("$env.PATH = ($env.PATH | prepend \"{}\")", posix_bin);
                     }
                     _ => {
-                        println!("export JAVA_HOME=\"{}\"", java_home);
-                        println!("export PATH=\"{}:$PATH\"", bin_dir);
+                        let posix_home = java_home.replace('\\', "/");
+                        let posix_bin = bin_dir.replace('\\', "/");
+                        println!("export JAVA_HOME=\"{}\"", posix_home);
+                        println!("export PATH=\"{}:$PATH\"", posix_bin);
                     }
                 }
             } else {
@@ -2622,11 +2632,12 @@ async fn run_single_file_script(
         java_args.push(djuke_pm::build_classpath(&resolved_jars));
     }
 
+    // The main script file to execute must be specified first
+    java_args.push(file_path.to_string_lossy().to_string());
+
     for src in &directives.sources {
         java_args.push(src.clone());
     }
-
-    java_args.push(file_path.to_string_lossy().to_string());
 
     for arg in script_args {
         java_args.push(arg.clone());
