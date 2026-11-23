@@ -27,12 +27,20 @@ pub async fn execute_task(exec: TaskExecution<'_>) -> Result<ExitStatus> {
         BuildTool::Gradle => {
             let bat = exec.project_root.join("gradlew.bat");
             let sh = exec.project_root.join("gradlew");
-            (cfg!(windows) && bat.is_file()) || sh.is_file()
+            if cfg!(windows) {
+                bat.is_file()
+            } else {
+                sh.is_file()
+            }
         }
         BuildTool::Maven => {
             let cmd = exec.project_root.join("mvnw.cmd");
             let sh = exec.project_root.join("mvnw");
-            (cfg!(windows) && cmd.is_file()) || sh.is_file()
+            if cfg!(windows) {
+                cmd.is_file()
+            } else {
+                sh.is_file()
+            }
         }
     };
 
@@ -60,7 +68,8 @@ pub async fn execute_task(exec: TaskExecution<'_>) -> Result<ExitStatus> {
             ))
         })?;
 
-    let mut cmd_args: Vec<&str> = exec.task_command.split_whitespace().collect();
+    let parsed_args = split_command_args(exec.task_command);
+    let mut cmd_args: Vec<&str> = parsed_args.iter().map(|s| s.as_str()).collect();
 
     for arg in exec.extra_args {
         cmd_args.push(arg.as_str());
@@ -86,4 +95,52 @@ fn infer_java_version_from_path(path: &Path) -> String {
         }
     }
     "21".to_string()
+}
+
+fn split_command_args(cmd: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut quote_char = ' ';
+
+    for c in cmd.chars() {
+        match c {
+            '"' | '\'' if !in_quotes => {
+                in_quotes = true;
+                quote_char = c;
+            }
+            c if in_quotes && c == quote_char => {
+                in_quotes = false;
+            }
+            c if c.is_whitespace() && !in_quotes => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+    args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_command_args_preserves_quoted_spaces() {
+        let cmd = r#"bootRun -Dspring.profiles.active="dev local" --info"#;
+        let args = split_command_args(cmd);
+        assert_eq!(
+            args,
+            vec![
+                "bootRun",
+                "-Dspring.profiles.active=dev local",
+                "--info"
+            ]
+        );
+    }
 }

@@ -29,12 +29,14 @@ pub fn find_build_executable_with_paths(
             let gradlew_bat = project_root.join("gradlew.bat");
             let gradlew = project_root.join("gradlew");
 
-            if cfg!(windows) && gradlew_bat.is_file() {
-                return Some(ResolvedBuildExecutable {
-                    tool: BuildTool::Gradle,
-                    executable: gradlew_bat,
-                    is_wrapper: true,
-                });
+            if cfg!(windows) {
+                if gradlew_bat.is_file() {
+                    return Some(ResolvedBuildExecutable {
+                        tool: BuildTool::Gradle,
+                        executable: gradlew_bat,
+                        is_wrapper: true,
+                    });
+                }
             } else if gradlew.is_file() {
                 return Some(ResolvedBuildExecutable {
                     tool: BuildTool::Gradle,
@@ -78,12 +80,14 @@ pub fn find_build_executable_with_paths(
             let mvnw_cmd = project_root.join("mvnw.cmd");
             let mvnw = project_root.join("mvnw");
 
-            if cfg!(windows) && mvnw_cmd.is_file() {
-                return Some(ResolvedBuildExecutable {
-                    tool: BuildTool::Maven,
-                    executable: mvnw_cmd,
-                    is_wrapper: true,
-                });
+            if cfg!(windows) {
+                if mvnw_cmd.is_file() {
+                    return Some(ResolvedBuildExecutable {
+                        tool: BuildTool::Maven,
+                        executable: mvnw_cmd,
+                        is_wrapper: true,
+                    });
+                }
             } else if mvnw.is_file() {
                 return Some(ResolvedBuildExecutable {
                     tool: BuildTool::Maven,

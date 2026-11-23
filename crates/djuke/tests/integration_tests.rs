@@ -483,15 +483,15 @@ fn test_gradle_wrapper_compatible_version_selection_for_java_27_and_modern_runti
     use djuke_build::compatible_gradle_version_for_java;
 
     // Verify version selection for various Java versions
-    assert_eq!(compatible_gradle_version_for_java("27"), "9.9.2");
-    assert_eq!(compatible_gradle_version_for_java("25"), "9.9.2");
-    assert_eq!(compatible_gradle_version_for_java("23"), "9.9.2");
-    assert_eq!(compatible_gradle_version_for_java("21"), "9.9.2");
-    assert_eq!(compatible_gradle_version_for_java("17"), "9.9.2");
-    assert_eq!(compatible_gradle_version_for_java("11"), "8.14.8");
-    assert_eq!(compatible_gradle_version_for_java("8"), "8.14.8");
+    assert_eq!(compatible_gradle_version_for_java("27"), "8.14.0");
+    assert_eq!(compatible_gradle_version_for_java("25"), "8.14.0");
+    assert_eq!(compatible_gradle_version_for_java("23"), "8.14.0");
+    assert_eq!(compatible_gradle_version_for_java("21"), "8.14.0");
+    assert_eq!(compatible_gradle_version_for_java("17"), "8.14.0");
+    assert_eq!(compatible_gradle_version_for_java("11"), "8.5");
+    assert_eq!(compatible_gradle_version_for_java("8"), "8.5");
 
-    // Verify wrapper generation writes exact Gradle 9.9.2 properties and gradle.properties
+    // Verify wrapper generation writes exact Gradle 8.14.0 properties and gradle.properties
     let dir = tempdir().unwrap();
     let root = dir.path();
 
@@ -504,7 +504,7 @@ fn test_gradle_wrapper_compatible_version_selection_for_java_27_and_modern_runti
         .join("gradle-wrapper.properties");
     assert!(props_path.is_file());
     let props = fs::read_to_string(&props_path).unwrap();
-    assert!(props.contains("gradle-9.9.2-bin.zip"));
+    assert!(props.contains("gradle-8.14.0-bin.zip"));
 
     // Verify gradle.properties is created with modern jvmargs and performance tuning
     let gradle_props_path = root.join("gradle.properties");

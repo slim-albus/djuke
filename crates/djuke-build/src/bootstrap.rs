@@ -6,14 +6,14 @@ use djuke_core::{BuildTool, DjukeError, Result};
 use djuke_download::Downloader;
 use djuke_platform::DjukePaths;
 
-pub const DEFAULT_GRADLE_VERSION: &str = "9.9.2";
-pub const DEFAULT_MAVEN_VERSION: &str = "3.9.16";
+pub const DEFAULT_GRADLE_VERSION: &str = "8.14.0";
+pub const DEFAULT_MAVEN_VERSION: &str = "3.9.9";
 
 /// Extracts the integer major version from a version specification string (e.g. "21", "27.0.1.1", "17.0.10", "latest", "lts").
 pub fn extract_java_major(version: &str) -> Option<u32> {
     let trimmed = version.trim();
     if trimmed.eq_ignore_ascii_case("latest") || trimmed.eq_ignore_ascii_case("lts") {
-        return Some(25);
+        return Some(21);
     }
     let s = if let Some(stripped) = trimmed.strip_prefix("1.") {
         stripped
@@ -25,12 +25,12 @@ pub fn extract_java_major(version: &str) -> Option<u32> {
 }
 
 /// Resolves the optimal, officially compatible Gradle version for a given target Java version.
-/// Defaults to the latest available Gradle 9.9.2 for Java 17+, and Gradle 8.14.8 for legacy Java 8-16.
+/// Defaults to stable Gradle 8.14.0 for Java 17+, and Gradle 8.5 for legacy Java 8-16.
 pub fn compatible_gradle_version_for_java(java_version: &str) -> &'static str {
     let major = extract_java_major(java_version).unwrap_or(21);
     match major {
-        0..=16 => "8.14.8",       // Latest Gradle 8 series for legacy Java 8-16
-        17..=u32::MAX => "9.9.2", // Latest Gradle 9 series for modern Java (17, 21, 23, 24, 25, 27+)
+        0..=16 => "8.5",
+        17..=u32::MAX => "8.14.0",
     }
 }
 
@@ -321,7 +321,7 @@ mod tests {
         assert!(props_file.is_file());
 
         let props = fs::read_to_string(&props_file).unwrap();
-        assert!(props.contains("gradle-9.9.2-bin.zip"));
+        assert!(props.contains("gradle-8.14.0-bin.zip"));
     }
 
     #[test]
@@ -345,6 +345,6 @@ mod tests {
         assert!(props_file.is_file());
 
         let props = fs::read_to_string(&props_file).unwrap();
-        assert!(props.contains("apache-maven-3.9.16-bin.zip"));
+        assert!(props.contains("apache-maven-3.9.9-bin.zip"));
     }
 }
