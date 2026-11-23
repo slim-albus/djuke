@@ -33,7 +33,7 @@ pub async fn run_self_upgrade(check_only: bool, force: bool, quiet: bool) -> Res
     if !quiet {
         println!(
             "{} Checking for djuke updates (current: {})...",
-            "⚡".cyan(),
+            "•".cyan(),
             format!("v{}", current_version).bold()
         );
     }
@@ -85,7 +85,7 @@ pub async fn run_self_upgrade(check_only: bool, force: bool, quiet: bool) -> Res
     if !has_update && !force {
         println!(
             "{} djuke is already up to date! ({})",
-            "✔".green().bold(),
+            "✓".green().bold(),
             format!("v{}", current_version).cyan()
         );
         return Ok(());
@@ -94,8 +94,7 @@ pub async fn run_self_upgrade(check_only: bool, force: bool, quiet: bool) -> Res
     if check_only {
         if has_update {
             println!(
-                "{} An update is available: {} -> {}\nRun {} to upgrade.",
-                "⭐".yellow(),
+                "An update is available: {} -> {}\nRun {} to upgrade.",
                 format!("v{}", current_version).red(),
                 format!("v{}", latest_version).green().bold(),
                 "djuke upgrade".cyan().bold()
@@ -103,7 +102,7 @@ pub async fn run_self_upgrade(check_only: bool, force: bool, quiet: bool) -> Res
         } else {
             println!(
                 "{} djuke is up to date (v{}).",
-                "✔".green(),
+                "✓".green(),
                 current_version
             );
         }
@@ -111,8 +110,7 @@ pub async fn run_self_upgrade(check_only: bool, force: bool, quiet: bool) -> Res
     }
 
     println!(
-        "{} Upgrading djuke {} -> {}...",
-        "⬆".cyan().bold(),
+        "Upgrading djuke {} -> {}...",
         format!("v{}", current_version).yellow(),
         format!("v{}", latest_version).green().bold()
     );
@@ -178,7 +176,7 @@ pub async fn run_self_upgrade(check_only: bool, force: bool, quiet: bool) -> Res
 
     println!(
         "\n{} Successfully upgraded djuke to {}!",
-        "✔".green().bold(),
+        "✓".green().bold(),
         format!("v{}", latest_version).green().bold()
     );
     println!("  Updated: {}", current_exe.display().to_string().cyan());

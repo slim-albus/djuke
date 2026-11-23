@@ -118,7 +118,7 @@ pub async fn handle_add(
             }
             Err(e) => {
                 eprintln!(
-                    "⚠ Could not resolve version from Maven Central: {}. Proceeding without explicit version.",
+                    "warning: Could not resolve version from Maven Central: {}. Proceeding without explicit version.",
                     e
                 );
             }
@@ -133,7 +133,7 @@ pub async fn handle_add(
                 return Err(DjukeError::Generic("pom.xml not found in project root".into()).into());
             }
             add_maven_dependency(&pom_path, &spec)?;
-            println!("✔ Added {} to pom.xml", spec.to_string().green().bold());
+            println!("✓ Added {} to pom.xml", spec.to_string().green().bold());
         }
         Some(BuildTool::Gradle) | None => {
             let kts = config.project_root.join("build.gradle.kts");
@@ -150,7 +150,7 @@ pub async fn handle_add(
             };
             add_gradle_dependency(&build_file, &spec)?;
             println!(
-                "✔ Added {} to {}",
+                "✓ Added {} to {}",
                 spec.to_string().green().bold(),
                 build_file.file_name().unwrap_or_default().to_string_lossy()
             );
@@ -218,7 +218,7 @@ pub fn handle_remove(
         Some(BuildTool::Maven) => {
             let pom_path = config.project_root.join("pom.xml");
             remove_maven_dependency(&pom_path, &group, &artifact)?;
-            println!("✔ Removed {}:{} from pom.xml", group, artifact);
+            println!("✓ Removed {}:{} from pom.xml", group, artifact);
         }
         Some(BuildTool::Gradle) | None => {
             let kts = config.project_root.join("build.gradle.kts");
@@ -226,7 +226,7 @@ pub fn handle_remove(
             let build_file = if kts.is_file() { kts } else { groovy };
             remove_gradle_dependency(&build_file, &group, &artifact)?;
             println!(
-                "✔ Removed {}:{} from {}",
+                "✓ Removed {}:{} from {}",
                 group,
                 artifact,
                 build_file.file_name().unwrap_or_default().to_string_lossy()

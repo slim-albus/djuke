@@ -119,7 +119,7 @@ pub async fn install_jdk(spec: &JdkSpec, paths: &DjukePaths, quiet: bool) -> Res
 
     if !quiet {
         eprintln!(
-            "✔ Successfully installed {} to {}",
+            "✓ Successfully installed {} to {}",
             installed.id,
             target_dir.display()
         );

@@ -29,8 +29,8 @@ async fn main() -> Result<()> {
         Commands::Doctor => {
             commands::doctor::handle_doctor(&current_dir, &paths, cli.json).await?;
         }
-        Commands::Java(java_args) => {
-            commands::java::handle_java(java_args, &current_dir, &paths, cli.json, cli.quiet).await?;
+        Commands::Jdk(jdk_args) => {
+            commands::java::handle_java(jdk_args, &current_dir, &paths, cli.json, cli.quiet).await?;
         }
         Commands::New {
             name,
@@ -113,8 +113,8 @@ async fn main() -> Result<()> {
         Commands::Cache(cache_args) => {
             commands::cache::handle_cache(cache_args, &paths, cli.json)?;
         }
-        Commands::Setup { tool, distro } => {
-            commands::project::handle_setup(tool, distro, &current_dir, &paths, cli.quiet).await?;
+        Commands::Setup { tool, distro, spec } => {
+            commands::project::handle_setup(tool, distro, spec, &current_dir, &paths, cli.quiet).await?;
         }
         Commands::Build(build_args) => {
             commands::build::handle_build(build_args, &current_dir, &paths, cli.quiet).await?;

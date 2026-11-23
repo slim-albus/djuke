@@ -156,7 +156,7 @@ pub async fn bootstrap_wrapper(
     }
 
     if !quiet {
-        eprintln!("✔ {} wrapper created successfully.", tool);
+        eprintln!("✓ {} wrapper created successfully.", tool);
     }
 
     // Automatically prime and pre-download the wrapper distribution so future commands run instantly
@@ -211,7 +211,7 @@ pub async fn prime_wrapper(
     }
 
     if !quiet {
-        eprintln!("✔ {} wrapper distribution primed and ready.", tool);
+        eprintln!("✓ {} wrapper distribution primed and ready.", tool);
     }
 
     Ok(())

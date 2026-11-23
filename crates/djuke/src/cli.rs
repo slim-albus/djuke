@@ -36,8 +36,8 @@ pub enum Commands {
     #[command(about = "Check development environment health and diagnostic status")]
     Doctor,
 
-    #[command(about = "JDK installation, listing, and switching")]
-    Java(JavaArgs),
+    #[command(about = "JDK installation, listing, and switching", alias = "java")]
+    Jdk(JdkArgs),
 
     #[command(about = "Create a new Java project from a template")]
     New {
@@ -191,7 +191,10 @@ pub enum Commands {
     #[command(about = "Manage downloaded archives and temporary cache files")]
     Cache(CacheArgs),
 
-    #[command(about = "Prepare project dependencies, JDK, and build tool wrappers")]
+    #[command(
+        about = "Prepare project dependencies, JDK, and build tool wrappers",
+        alias = "install"
+    )]
     Setup {
         #[arg(
             short = 't',
@@ -206,6 +209,11 @@ pub enum Commands {
             help = "JDK distribution: temurin, openjdk, corretto, zulu, microsoft, semeru, graalvm, liberica, oracle, sapmachine"
         )]
         distro: Option<JdkDistribution>,
+
+        #[arg(
+            help = "Optional JDK version or specification to configure and install (e.g. '21', 'temurin@17')"
+        )]
+        spec: Option<String>,
     },
 
     #[command(about = "Execute the project build task")]
@@ -473,13 +481,13 @@ pub enum MavenSubcommands {
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct JavaArgs {
+pub struct JdkArgs {
     #[command(subcommand)]
-    pub command: JavaSubcommands,
+    pub command: Option<JdkSubcommands>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
-pub enum JavaSubcommands {
+pub enum JdkSubcommands {
     #[command(about = "List installed or remote available JDKs")]
     List {
         #[arg(long, help = "Query remote Foojay Disco API for available versions")]
@@ -499,10 +507,9 @@ pub enum JavaSubcommands {
     #[command(about = "Install a JDK (e.g. '21', 'latest', 'temurin@21', 'corretto@latest')")]
     Install {
         #[arg(
-            default_value = "latest",
-            help = "JDK specification e.g. '21', 'latest', 'lts', 'corretto@21'"
+            help = "JDK specification e.g. '21', 'latest', 'lts', 'corretto@21' (interactive picker if omitted)"
         )]
-        spec: String,
+        spec: Option<String>,
 
         #[arg(
             short,
@@ -551,10 +558,15 @@ pub enum JavaSubcommands {
 
     #[command(about = "Uninstall a locally managed JDK")]
     Uninstall {
-        #[arg(help = "JDK id, version, or folder name to remove")]
-        target: String,
+        #[arg(help = "JDK id, version, or folder name to remove (interactive picker if omitted)")]
+        target: Option<String>,
     },
 }
+
+#[allow(dead_code)]
+pub type JavaArgs = JdkArgs;
+#[allow(dead_code)]
+pub type JavaSubcommands = JdkSubcommands;
 
 #[derive(Debug, Clone)]
 pub struct CliProjectOptions {

@@ -25,21 +25,21 @@ pub struct DoctorReport {
 
 impl DoctorReport {
     pub fn print_human(&self) {
-        println!("\n{}", "🩺 djuke Doctor System Diagnostic".bold().cyan());
-        println!("{}\n", "================================".cyan());
+        println!("\n{}", "djuke System Diagnostic".bold().cyan());
+        println!("{}\n", "=======================".cyan());
 
         for check in &self.checks {
             if check.status {
                 println!(
                     "{} {}: {}",
-                    "✔".green().bold(),
+                    "✓".green().bold(),
                     check.name.bold(),
                     check.message
                 );
             } else {
                 println!(
                     "{} {}: {}",
-                    "✘".red().bold(),
+                    "✗".red().bold(),
                     check.name.bold(),
                     check.message.red()
                 );
@@ -53,21 +53,21 @@ impl DoctorReport {
         if self.overall_status {
             println!(
                 "{}",
-                "✔ Your environment is ready for Java development!"
+                "✓ Your environment is ready for Java development!"
                     .green()
                     .bold()
             );
         } else {
             println!(
                 "{}",
-                "⚠ Environment is not ready for Java development. Resolve the issues above."
+                "! Environment is not ready for Java development. Resolve the issues above."
                     .yellow()
                     .bold()
             );
             println!(
                 "  {} Run '{}' or '{}' to install a managed JDK.\n",
                 "Tip:".cyan().bold(),
-                "djuke java install 21".green(),
+                "djuke jdk install 21".green(),
                 "djuke setup".green()
             );
         }

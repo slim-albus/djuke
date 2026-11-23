@@ -40,7 +40,7 @@ pub fn handle_cache(args: CacheArgs, paths: &DjukePaths, json: bool) -> Result<(
         }
         CacheSubcommands::Clean => {
             let (count, _total_bytes) = djuke_cache::clean_cache(paths)?;
-            println!("✔ Cleared {} files from cache.", count);
+            println!("✓ Cleared {} files from cache.", count);
         }
     }
     Ok(())

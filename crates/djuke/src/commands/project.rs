@@ -137,7 +137,7 @@ pub async fn handle_new(
 
     println!(
         "{}",
-        "✔ Project created and toolchain primed successfully!"
+        "✓ Project created and toolchain primed successfully."
             .green()
             .bold()
     );
@@ -263,7 +263,7 @@ pub async fn handle_init(
 
     println!(
         "{}",
-        "✔ Project initialized and toolchain primed successfully!"
+        "✓ Project initialized and toolchain primed successfully."
             .green()
             .bold()
     );
@@ -276,15 +276,26 @@ pub async fn handle_init(
 pub async fn handle_setup(
     tool: Option<BuildTool>,
     distro: Option<JdkDistribution>,
+    spec: Option<String>,
     current_dir: &Path,
     paths: &DjukePaths,
     quiet: bool,
 ) -> Result<()> {
     let mut config = resolve_project_config_with_tool(current_dir, None, tool, paths);
+    if let Some(s) = spec {
+        if s.contains('@') {
+            let parsed: djuke_core::JdkSpec = s.parse()?;
+            config.jdk_spec = parsed;
+        } else {
+            config.jdk_spec.version = s;
+        }
+    }
     if let Some(d) = distro {
         config.jdk_spec.distribution = d;
     }
-    println!("{}", "🚀 Running djuke setup...".bold().cyan());
+    if !quiet {
+        println!("{}", "Setting up project environment...".bold().cyan());
+    }
 
     // 1. Ensure JDK installed
     let installed_jdk = resolve_jdk(&config.jdk_spec, paths, true, quiet).await?;
@@ -326,7 +337,7 @@ pub async fn handle_setup(
             )
             .await
             {
-                eprintln!("⚠ Wrapper generation failed: {}", e);
+                eprintln!("warning: Wrapper generation failed: {}", e);
                 wrapper_status = "missing (generation failed)";
             } else {
                 wrapper_status = "generated & primed";

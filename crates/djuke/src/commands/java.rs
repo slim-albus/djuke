@@ -7,7 +7,7 @@ use djuke_config::{load_manifest, resolve_project_config};
 use djuke_core::{DjukeError, DjukePaths, JdkDistribution, JdkSpec, Platform, ProjectManifest};
 use djuke_jdk::{disco::DiscoMajorVersion, install_jdk, resolve_jdk, DiscoClient, JdkStore};
 
-use crate::cli::{JavaArgs, JavaSubcommands};
+use crate::cli::{JdkArgs, JdkSubcommands};
 
 pub async fn handle_use_command(
     spec: Option<String>,
@@ -135,7 +135,7 @@ pub async fn handle_use_command(
         cfg.java = Some(j);
         djuke_config::global::save_global_config(&paths.config_file(), &cfg)?;
         println!(
-            "✔ Set global default Java to {}@{}",
+            "✓ Set global default Java to {}@{}",
             parsed_spec.distribution, parsed_spec.version
         );
     } else {
@@ -152,7 +152,7 @@ pub async fn handle_use_command(
 
         djuke_config::manifest::save_manifest(&manifest_file, &manifest)?;
         println!(
-            "✔ Configured project in '{}' to use {}@{}",
+            "✓ Configured project in '{}' to use {}@{}",
             manifest_file.display(),
             parsed_spec.distribution,
             parsed_spec.version
@@ -164,14 +164,19 @@ pub async fn handle_use_command(
 }
 
 pub async fn handle_java(
-    args: JavaArgs,
+    args: JdkArgs,
     current_dir: &Path,
     paths: &DjukePaths,
     json: bool,
     quiet: bool,
 ) -> Result<()> {
-    match args.command {
-        JavaSubcommands::List { remote, lts, distro } => {
+    let sub = args.command.unwrap_or(JdkSubcommands::List {
+        remote: false,
+        lts: false,
+        distro: None,
+    });
+    match sub {
+        JdkSubcommands::List { remote, lts, distro } => {
             let store = JdkStore::new(paths.clone());
             if remote {
                 let disco = DiscoClient::new();
@@ -309,8 +314,48 @@ pub async fn handle_java(
             }
         }
 
-        JavaSubcommands::Install { spec, distro } => {
-            let mut parsed_spec: JdkSpec = spec.parse()?;
+        JdkSubcommands::Install { spec, distro } => {
+            let target_spec = match spec {
+                Some(s) if !s.trim().is_empty() => s,
+                _ => {
+                    if std::io::stdin().is_terminal() {
+                        let theme = dialoguer::theme::ColorfulTheme::default();
+                        let options = [
+                            "Eclipse Temurin 21 (LTS) [Adoptium standard]",
+                            "Eclipse Temurin 25 (LTS) [Next-gen long-term support]",
+                            "Eclipse Temurin 17 (LTS) [Enterprise legacy LTS]",
+                            "Oracle OpenJDK 21 [Official reference build]",
+                            "Amazon Corretto 21 [AWS production runtime]",
+                            "Custom specification...",
+                        ];
+                        let idx = dialoguer::Select::with_theme(&theme)
+                            .with_prompt("Select a JDK to download and install")
+                            .items(&options)
+                            .default(0)
+                            .interact()
+                            .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+
+                        match idx {
+                            0 => "21".to_string(),
+                            1 => "25".to_string(),
+                            2 => "17".to_string(),
+                            3 => "openjdk@21".to_string(),
+                            4 => "corretto@21".to_string(),
+                            _ => {
+                                let input: String = dialoguer::Input::with_theme(&theme)
+                                    .with_prompt("Enter JDK specification (e.g. '21', 'zulu@17')")
+                                    .interact_text()
+                                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                                input
+                            }
+                        }
+                    } else {
+                        "21".to_string()
+                    }
+                }
+            };
+
+            let mut parsed_spec: JdkSpec = target_spec.parse()?;
             if let Some(d) = distro {
                 parsed_spec.distribution = d;
             }
@@ -319,10 +364,16 @@ pub async fn handle_java(
                 let s = serde_json::to_string_pretty(&installed)
                     .map_err(|e| djuke_core::DjukeError::Serialization(e.to_string()))?;
                 println!("{}", s);
+            } else if !quiet {
+                println!(
+                    "✓ Installed {} to {}",
+                    format!("{}@{}", installed.distribution, installed.version).green().bold(),
+                    installed.java_home.display()
+                );
             }
         }
 
-        JavaSubcommands::Default { spec, distro } => {
+        JdkSubcommands::Default { spec, distro } => {
             let mut cfg = djuke_config::global::load_global_config(&paths.config_file())?;
             match spec {
                 None => match &cfg.java {
@@ -407,7 +458,7 @@ pub async fn handle_java(
                     cfg.java = Some(j);
                     djuke_config::global::save_global_config(&paths.config_file(), &cfg)?;
                     println!(
-                        "✔ Set global default Java to {}@{}",
+                        "✓ Set global default Java to {}@{}",
                         parsed_spec.distribution, parsed_spec.version
                     );
                     println!("  JAVA_HOME: {}", installed.java_home.display());
@@ -415,11 +466,11 @@ pub async fn handle_java(
             }
         }
 
-        JavaSubcommands::Use { spec, distro, global } => {
+        JdkSubcommands::Use { spec, distro, global } => {
             handle_use_command(spec, distro, global, paths, current_dir, quiet).await?;
         }
 
-        JavaSubcommands::Current => {
+        JdkSubcommands::Current => {
             let config = resolve_project_config(current_dir, None, paths);
             let store = JdkStore::new(paths.clone());
             let installed = store.find_installed(&config.jdk_spec);
@@ -453,10 +504,46 @@ pub async fn handle_java(
             }
         }
 
-        JavaSubcommands::Uninstall { target } => {
+        JdkSubcommands::Uninstall { target } => {
             let store = JdkStore::new(paths.clone());
-            let removed_path = store.uninstall(&target)?;
-            println!("✔ Removed JDK at {}", removed_path.display());
+            let target_id = match target {
+                Some(t) if !t.trim().is_empty() => t,
+                _ => {
+                    let installed = store.list_installed()?;
+                    if installed.is_empty() {
+                        println!("No JDKs currently installed locally.");
+                        return Ok(());
+                    }
+                    if std::io::stdin().is_terminal() {
+                        let theme = dialoguer::theme::ColorfulTheme::default();
+                        let items: Vec<String> = installed
+                            .iter()
+                            .map(|j| {
+                                format!(
+                                    "{}@{} ({})",
+                                    j.distribution,
+                                    j.version,
+                                    j.java_home.display()
+                                )
+                            })
+                            .collect();
+                        let idx = dialoguer::Select::with_theme(&theme)
+                            .with_prompt("Select JDK to uninstall")
+                            .items(&items)
+                            .default(0)
+                            .interact()
+                            .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                        installed[idx].id.clone()
+                    } else {
+                        return Err(DjukeError::Generic(
+                            "Please provide the JDK version or id to uninstall (e.g. 'djuke jdk uninstall 21')".into(),
+                        )
+                        .into());
+                    }
+                }
+            };
+            let removed_path = store.uninstall(&target_id)?;
+            println!("✓ Removed JDK at {}", removed_path.display());
         }
     }
     Ok(())

@@ -172,49 +172,49 @@ pub async fn resolve_project_options(
                 };
 
                 let v21_label = if is_downloaded("21") {
-                    "21 (LTS) [Installed locally ✔] - Recommended: Current production standard"
+                    "21 (LTS) [Installed locally ✓] - Recommended: Current production standard"
                         .to_string()
                 } else {
                     "21 (LTS)                       - Recommended: Current production standard"
                         .to_string()
                 };
                 let v25_label = if is_downloaded("25") {
-                    "25 (LTS) [Installed locally ✔] - Modern standard: Next-generation long-term support"
+                    "25 (LTS) [Installed locally ✓] - Modern standard: Next-generation long-term support"
                         .to_string()
                 } else {
                     "25 (LTS)                       - Modern standard: Next-generation long-term support"
                         .to_string()
                 };
                 let v23_label = if is_downloaded("23") {
-                    "23 (GA)  [Installed locally ✔] - Recent feature release: Virtual threads & modern features"
+                    "23 (GA)  [Installed locally ✓] - Recent feature release: Virtual threads & modern features"
                         .to_string()
                 } else {
                     "23 (GA)                        - Recent feature release: Virtual threads & modern features"
                         .to_string()
                 };
                 let v17_label = if is_downloaded("17") {
-                    "17 (LTS) [Installed locally ✔] - Enterprise LTS: Broad compatibility for established projects"
+                    "17 (LTS) [Installed locally ✓] - Enterprise LTS: Broad compatibility for established projects"
                         .to_string()
                 } else {
                     "17 (LTS)                       - Enterprise LTS: Broad compatibility for established projects"
                         .to_string()
                 };
                 let v27_label = if is_downloaded("27") {
-                    "27 (EA)  [Installed locally ✔] - Next-Gen / Bleeding edge: Early access language features"
+                    "27 (EA)  [Installed locally ✓] - Next-Gen / Bleeding edge: Early access language features"
                         .to_string()
                 } else {
                     "27 (EA)                        - Next-Gen / Bleeding edge: Early access language features"
                         .to_string()
                 };
                 let v11_label = if is_downloaded("11") {
-                    "11 (LTS) [Installed locally ✔] - Legacy enterprise: Older enterprise maintenance"
+                    "11 (LTS) [Installed locally ✓] - Legacy enterprise: Older enterprise maintenance"
                         .to_string()
                 } else {
                     "11 (LTS)                       - Legacy enterprise: Older enterprise maintenance"
                         .to_string()
                 };
                 let v8_label = if is_downloaded("8") {
-                    "8  (LTS) [Installed locally ✔] - Legacy baseline: Java 1.8 compatibility"
+                    "8  (LTS) [Installed locally ✓] - Legacy baseline: Java 1.8 compatibility"
                         .to_string()
                 } else {
                     "8  (LTS)                       - Legacy baseline: Java 1.8 compatibility"

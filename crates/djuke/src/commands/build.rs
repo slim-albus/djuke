@@ -235,7 +235,7 @@ pub async fn handle_gradle(
             if !quiet {
                 println!(
                     "{}",
-                    "✔ Gradle wrapper created and primed successfully."
+                    "✓ Gradle wrapper created and primed successfully."
                         .green()
                         .bold()
                 );
@@ -312,7 +312,7 @@ pub async fn handle_maven(
             if !quiet {
                 println!(
                     "{}",
-                    "✔ Maven wrapper created and primed successfully."
+                    "✓ Maven wrapper created and primed successfully."
                         .green()
                         .bold()
                 );

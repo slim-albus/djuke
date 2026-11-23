@@ -133,7 +133,7 @@ pub fn render_audit_report(reports: &[VulnerabilityReport], scanned_count: usize
     if reports.is_empty() {
         out.push_str(&format!(
             "{}\n",
-            "✔ 0 vulnerabilities detected. All scanned dependencies are clean!"
+            "✓ 0 vulnerabilities detected. All scanned dependencies are clean!"
                 .green()
                 .bold()
         ));
@@ -147,7 +147,7 @@ pub fn render_audit_report(reports: &[VulnerabilityReport], scanned_count: usize
         let ver = rep.dependency.version.as_deref().unwrap_or("unknown");
 
         out.push_str(&format!(
-            "✖ {} (version: {})\n",
+            "✗ {} (version: {})\n",
             coord.red().bold(),
             ver.yellow()
         ));
@@ -174,7 +174,7 @@ pub fn render_audit_report(reports: &[VulnerabilityReport], scanned_count: usize
     }
 
     out.push_str(&format!(
-        "⚠ {} vulnerabilities detected across {} dependencies.\n",
+        "warning: {} vulnerabilities detected across {} dependencies.\n",
         total_vulns.to_string().red().bold(),
         reports.len().to_string().red().bold()
     ));

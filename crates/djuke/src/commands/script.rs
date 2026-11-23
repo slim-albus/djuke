@@ -43,7 +43,7 @@ pub async fn run_single_file_script(
         if !quiet {
             println!(
                 "{} Resolving {} script dependencies for {}...",
-                "⚡".cyan(),
+                "•".cyan(),
                 directives.dependencies.len(),
                 file_path
                     .file_name()

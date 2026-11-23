@@ -16,7 +16,7 @@ pub async fn generate_project(opts: &NewProjectOptions) -> Result<()> {
             Ok(()) => return Ok(()),
             Err(e) => {
                 eprintln!(
-                    "⚠ Spring Initializr API unreachable ({}). Falling back to offline embedded Spring Boot template...",
+                    "warning: Spring Initializr API unreachable ({}). Falling back to offline embedded Spring Boot template...",
                     e
                 );
             }
@@ -514,7 +514,7 @@ public class App {{
 
         app.get("/health", ctx -> ctx.json(Map.of("status", "UP")));
 
-        System.out.println("🚀 Javalin server running at http://localhost:8080");
+        System.out.println("Javalin server running at http://localhost:8080");
     }}
 
     public String getGreeting() {{
@@ -587,7 +587,7 @@ import java.util.concurrent.TimeUnit;
 
 public class App {{
     public static void main(String[] args) {{
-        System.out.println("🚀 gRPC Service initialized for {}");
+        System.out.println("gRPC Service initialized for {}");
         System.out.println("Proto file configured in src/main/proto/greeting.proto");
     }}
 
