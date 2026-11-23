@@ -113,13 +113,16 @@ pub fn render_outdated_table(infos: &[OutdatedInfo]) -> String {
             info.current.red()
         };
 
+        let display_coord = if coord.chars().count() > 44 {
+            let truncated: String = coord.chars().take(41).collect();
+            format!("{}...", truncated)
+        } else {
+            coord.clone()
+        };
+
         out.push_str(&format!(
             "{:<45} {:<15} {:<15} {}\n",
-            if coord.len() > 44 {
-                &coord[..44]
-            } else {
-                &coord
-            },
+            display_coord,
             current_colored,
             info.latest.green(),
             status_str
