@@ -3,17 +3,13 @@ resolver = "2"
 members = [
     "crates/djuke",
     "crates/djuke-core",
-    "crates/djuke-platform",
+    "crates/djuke-io",
     "crates/djuke-config",
-    "crates/djuke-download",
-    "crates/djuke-archive",
     "crates/djuke-jdk",
     "crates/djuke-build",
-    "crates/djuke-process",
-    "crates/djuke-doctor",
-    "crates/djuke-templates",
     "crates/djuke-pm",
-    "crates/djuke-cache",
+    "crates/djuke-templates",
+    "crates/djuke-doctor",
 ]
 
 [workspace.package]
@@ -25,17 +21,13 @@ license = "MIT"
 [workspace.dependencies]
 # Internal crates
 djuke-core = { path = "crates/djuke-core" }
-djuke-platform = { path = "crates/djuke-platform" }
+djuke-io = { path = "crates/djuke-io" }
 djuke-config = { path = "crates/djuke-config" }
-djuke-download = { path = "crates/djuke-download" }
-djuke-archive = { path = "crates/djuke-archive" }
 djuke-jdk = { path = "crates/djuke-jdk" }
 djuke-build = { path = "crates/djuke-build" }
-djuke-process = { path = "crates/djuke-process" }
-djuke-doctor = { path = "crates/djuke-doctor" }
-djuke-templates = { path = "crates/djuke-templates" }
 djuke-pm = { path = "crates/djuke-pm" }
-djuke-cache = { path = "crates/djuke-cache" }
+djuke-templates = { path = "crates/djuke-templates" }
+djuke-doctor = { path = "crates/djuke-doctor" }
 
 # Async & Networking
 tokio = { version = "1.40", features = ["full"] }

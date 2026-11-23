@@ -8,7 +8,7 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 
 use djuke_core::{DjukeError, Result};
 
-use crate::checksum::verify_checksum;
+use super::checksum::verify_checksum;
 
 const MIN_PARALLEL_SIZE: u64 = 4 * 1024 * 1024; // 4 MB minimum for multi-part
 const CHUNK_SIZE: u64 = 12 * 1024 * 1024; // 12 MB chunk target

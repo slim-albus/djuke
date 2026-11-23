@@ -4,9 +4,8 @@ use std::io::IsTerminal;
 use std::path::Path;
 
 use djuke_config::{load_manifest, resolve_project_config};
-use djuke_core::{DjukeError, JdkDistribution, JdkSpec, ProjectManifest};
+use djuke_core::{DjukeError, DjukePaths, JdkDistribution, JdkSpec, Platform, ProjectManifest};
 use djuke_jdk::{disco::DiscoMajorVersion, install_jdk, resolve_jdk, DiscoClient, JdkStore};
-use djuke_platform::{DjukePaths, Platform};
 
 use crate::cli::{JavaArgs, JavaSubcommands};
 

@@ -6,8 +6,8 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-djuke-archive.workspace = true
 djuke-core.workspace = true
+djuke-io.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

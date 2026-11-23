@@ -1,6 +1,7 @@
 pub mod bootstrap;
 pub mod driver;
 pub mod executor;
+pub mod process;
 pub mod version_resolver;
 pub mod wrapper;
 
@@ -11,6 +12,9 @@ pub use bootstrap::{
 };
 pub use driver::{GradleDriver, MavenDriver};
 pub use executor::{execute_task, TaskExecution};
+pub use process::{
+    init_terminal_safety, restore_terminal_state, CommandContext, ProcessRunner, TerminalGuard,
+};
 pub use version_resolver::{
     resolve_dynamic_gradle_version, resolve_dynamic_maven_version, CachedToolVersions,
 };

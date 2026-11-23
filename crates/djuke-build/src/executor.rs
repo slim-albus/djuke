@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::ExitStatus;
 
-use djuke_core::{BuildTool, DjukeError, Result};
-use djuke_platform::DjukePaths;
-use djuke_process::{CommandContext, ProcessRunner};
+use djuke_core::{BuildTool, DjukeError, DjukePaths, Result};
+use crate::process::{CommandContext, ProcessRunner};
 
 use crate::bootstrap::{create_gradle_wrapper, create_maven_wrapper};
 use crate::wrapper::find_build_executable_with_paths;

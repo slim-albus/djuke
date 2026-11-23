@@ -3,12 +3,10 @@ use colored::Colorize;
 use miette::Result;
 use std::path::Path;
 
-use djuke_build::{execute_task, TaskExecution};
+use djuke_build::{execute_task, CommandContext, ProcessRunner, TaskExecution};
 use djuke_config::resolve_project_config_with_tool;
-use djuke_core::{BuildTool, DjukeError};
+use djuke_core::{BuildTool, DjukeError, DjukePaths};
 use djuke_jdk::resolve_jdk;
-use djuke_platform::DjukePaths;
-use djuke_process::{CommandContext, ProcessRunner};
 
 use crate::cli::{BuildTaskArgs, GradleArgs, GradleSubcommands, MavenArgs, MavenSubcommands, RunTaskArgs};
 use crate::commands::script::run_single_file_script;

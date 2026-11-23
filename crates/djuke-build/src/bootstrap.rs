@@ -1,10 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use djuke_archive::extract_archive;
-use djuke_core::{BuildTool, DjukeError, Result};
-use djuke_download::Downloader;
-use djuke_platform::DjukePaths;
+use djuke_core::{BuildTool, DjukeError, DjukePaths, Result};
+use djuke_io::{extract_archive, Downloader};
+use crate::process::{CommandContext, ProcessRunner};
 
 pub const DEFAULT_GRADLE_VERSION: &str = "8.14.0";
 pub const DEFAULT_MAVEN_VERSION: &str = "3.9.9";
@@ -196,13 +195,13 @@ pub async fn prime_wrapper(
         BuildTool::Maven => vec!["-v"],
     };
 
-    let ctx = djuke_process::CommandContext {
+    let ctx = CommandContext {
         java_home: java_home.to_path_buf(),
         working_dir: project_root.to_path_buf(),
         extra_env: std::collections::HashMap::new(),
     };
 
-    let status = djuke_process::ProcessRunner::run_command(&program_str, &args, &ctx).await?;
+    let status = ProcessRunner::run_command(&program_str, &args, &ctx).await?;
     if !status.success() {
         return Err(DjukeError::Generic(format!(
             "Failed to prime {} wrapper: exit code {}",

@@ -398,7 +398,7 @@ impl SpringInitializrClient {
         // Extract to staging directory
         let staging_dir = tempfile::tempdir()?;
 
-        djuke_archive::zip_archive::extract_zip(temp_file.path(), staging_dir.path())?;
+        djuke_io::extract_archive(temp_file.path(), staging_dir.path())?;
 
         // Spring Initializr zips enclose contents in an artifactId directory
         let entries: Vec<_> = fs::read_dir(staging_dir.path())?

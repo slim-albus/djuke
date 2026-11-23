@@ -2,7 +2,7 @@ use std::fs;
 use std::time::Duration;
 
 use chrono::Utc;
-use djuke_platform::DjukePaths;
+use djuke_core::DjukePaths;
 use serde::{Deserialize, Serialize};
 
 use crate::bootstrap::{DEFAULT_GRADLE_VERSION, DEFAULT_MAVEN_VERSION};

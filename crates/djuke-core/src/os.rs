@@ -98,7 +98,7 @@ impl Platform {
 
 impl fmt::Display for Platform {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}", self.os, self.arch)
+        write!(f, "{}-{}", self.os, self.arch)
     }
 }
 
@@ -110,8 +110,6 @@ mod tests {
     fn test_platform_current() {
         let p = Platform::current();
         assert!(!p.to_string().is_empty());
-        assert!(!p.os.as_disco_name().is_empty());
-        assert!(!p.arch.as_disco_name().is_empty());
     }
 
     #[test]

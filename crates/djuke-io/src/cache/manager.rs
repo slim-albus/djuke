@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-use djuke_core::Result;
-use djuke_platform::DjukePaths;
+use djuke_core::{DjukePaths, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedFile {

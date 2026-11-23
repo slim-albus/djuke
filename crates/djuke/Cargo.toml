@@ -11,17 +11,13 @@ path = "src/main.rs"
 
 [dependencies]
 djuke-core.workspace = true
-djuke-platform.workspace = true
+djuke-io.workspace = true
 djuke-config.workspace = true
-djuke-download.workspace = true
-djuke-archive.workspace = true
 djuke-jdk.workspace = true
 djuke-build.workspace = true
-djuke-process.workspace = true
 djuke-doctor.workspace = true
 djuke-templates.workspace = true
 djuke-pm.workspace = true
-djuke-cache.workspace = true
 
 clap.workspace = true
 clap_complete.workspace = true

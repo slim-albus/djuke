@@ -2,7 +2,7 @@ use std::path::Path;
 use miette::Result;
 use djuke_config::resolve_project_config;
 use djuke_jdk::JdkStore;
-use djuke_platform::DjukePaths;
+use djuke_core::DjukePaths;
 
 pub fn handle_env(shell: Option<String>, current_dir: &Path, paths: &DjukePaths) -> Result<()> {
     let config = resolve_project_config(current_dir, None, paths);

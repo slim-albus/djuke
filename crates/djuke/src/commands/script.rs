@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use djuke_config::resolve_project_config_with_tool;
 use djuke_core::{BuildTool, DjukeError};
 use djuke_jdk::resolve_jdk;
-use djuke_platform::DjukePaths;
-use djuke_process::{CommandContext, ProcessRunner};
+use djuke_build::{CommandContext, ProcessRunner};
+use djuke_core::DjukePaths;
 
 pub async fn run_single_file_script(
     file_path: &Path,

@@ -1,5 +1,4 @@
-use djuke_core::{DjukeError, InstalledJdk, JdkSpec, Result};
-use djuke_platform::DjukePaths;
+use djuke_core::{DjukeError, DjukePaths, InstalledJdk, JdkSpec, Result};
 
 use crate::installer::install_jdk;
 use crate::store::JdkStore;

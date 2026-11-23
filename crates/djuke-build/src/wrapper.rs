@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use djuke_core::BuildTool;
-use djuke_platform::DjukePaths;
+use djuke_core::DjukePaths;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedBuildExecutable {

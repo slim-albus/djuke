@@ -4,8 +4,7 @@ use colored::Colorize;
 use miette::Result;
 
 use djuke_config::resolve_project_config;
-use djuke_core::{BuildTool, DjukeError};
-use djuke_platform::DjukePaths;
+use djuke_core::{BuildTool, DjukeError, DjukePaths};
 use djuke_pm::{
     add_gradle_dependency, add_maven_dependency, check_outdated_dependencies,
     extract_project_dependencies, remove_gradle_dependency, remove_maven_dependency,

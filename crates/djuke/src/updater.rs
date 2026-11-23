@@ -1,7 +1,7 @@
 use colored::Colorize;
 use djuke_core::{DjukeError, Result};
-use djuke_download::Downloader;
-use djuke_platform::{Arch, Os, Platform};
+use djuke_core::{Arch, Os, Platform};
+use djuke_io::Downloader;
 use serde::Deserialize;
 use std::env;
 use std::fs;
@@ -161,7 +161,7 @@ pub async fn run_self_upgrade(check_only: bool, force: bool, quiet: bool) -> Res
     {
         let extract_dir = temp_dir.path().join("extracted");
         fs::create_dir_all(&extract_dir)?;
-        djuke_archive::extract_archive(&download_target, &extract_dir)?;
+        djuke_io::extract_archive(&download_target, &extract_dir)?;
         find_executable_in_dir(&extract_dir)?
     } else {
         download_target

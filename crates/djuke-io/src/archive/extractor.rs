@@ -3,8 +3,8 @@ use std::path::Path;
 
 use djuke_core::{DjukeError, Result};
 
-use crate::tarball::extract_tar_gz;
-use crate::zip_archive::extract_zip;
+use super::tarball::extract_tar_gz;
+use super::zip_archive::extract_zip;
 
 pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> Result<()> {
     let parent = destination_dir

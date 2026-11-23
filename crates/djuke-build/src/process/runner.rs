@@ -6,7 +6,7 @@ use tokio::process::Command;
 
 use djuke_core::{DjukeError, Result};
 
-use crate::terminal::{restore_terminal_state, TerminalGuard};
+use super::terminal::{restore_terminal_state, TerminalGuard};
 
 #[derive(Debug, Clone)]
 pub struct CommandContext {

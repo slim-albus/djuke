@@ -2,8 +2,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::error::Result;
 use crate::os::Os;
-use djuke_core::Result;
 
 #[derive(Debug, Clone)]
 pub struct DjukePaths {

@@ -1,8 +1,6 @@
 use chrono::Utc;
-use djuke_archive::extract_archive;
-use djuke_core::{DjukeError, InstalledJdk, JdkSpec, Result};
-use djuke_download::Downloader;
-use djuke_platform::{DjukePaths, Platform};
+use djuke_core::{DjukeError, DjukePaths, InstalledJdk, JdkSpec, Platform, Result};
+use djuke_io::{extract_archive, Downloader};
 
 use crate::disco::DiscoClient;
 use crate::store::JdkStore;

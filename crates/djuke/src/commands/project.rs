@@ -3,9 +3,8 @@ use miette::Result;
 use std::path::Path;
 
 use djuke_config::resolve_project_config_with_tool;
-use djuke_core::{BuildTool, DjukeError, JdkDistribution};
+use djuke_core::{BuildTool, DjukeError, DjukePaths, JdkDistribution};
 use djuke_jdk::resolve_jdk;
-use djuke_platform::DjukePaths;
 
 use crate::cli::CliProjectOptions;
 use crate::prompts::resolve_project_options;

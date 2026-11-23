@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use djuke_core::{DjukeError, JdkDistribution, Result};
-use djuke_platform::Platform;
+use djuke_core::{DjukeError, JdkDistribution, Platform, Result};
 
 const DISCO_BASE_URL: &str = "https://api.foojay.io/disco/v3.0";
 

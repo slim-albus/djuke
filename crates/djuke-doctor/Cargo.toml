@@ -7,10 +7,9 @@ license.workspace = true
 
 [dependencies]
 djuke-core.workspace = true
-djuke-platform.workspace = true
+djuke-io.workspace = true
 djuke-jdk.workspace = true
 djuke-config.workspace = true
-djuke-cache.workspace = true
 serde.workspace = true
 colored.workspace = true
 tokio.workspace = true

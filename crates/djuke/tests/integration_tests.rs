@@ -2,8 +2,7 @@ use std::fs;
 use tempfile::tempdir;
 
 use djuke_config::{detect_project_markers, resolve_project_config};
-use djuke_core::{BuildTool, JdkDistribution};
-use djuke_platform::DjukePaths;
+use djuke_core::{BuildTool, DjukePaths, JdkDistribution};
 
 #[test]
 fn test_end_to_end_project_detection_and_resolution() {

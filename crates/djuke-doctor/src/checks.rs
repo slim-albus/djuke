@@ -4,9 +4,8 @@ use std::path::Path;
 use std::process::Command;
 
 use djuke_config::{load_global_config, resolve_project_config};
-use djuke_core::Result;
+use djuke_core::{DjukePaths, Platform, Result};
 use djuke_jdk::JdkStore;
-use djuke_platform::{DjukePaths, Platform};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthCheckResult {
@@ -293,7 +292,7 @@ pub async fn run_doctor_checks(working_dir: &Path, paths: &DjukePaths) -> Result
     }
 
     // 8. Disk cache stats
-    if let Ok(stats) = djuke_cache::get_cache_stats(paths) {
+    if let Ok(stats) = djuke_io::get_cache_stats(paths) {
         checks.push(HealthCheckResult {
             name: "Cache Storage".into(),
             status: true,

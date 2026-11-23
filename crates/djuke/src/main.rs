@@ -3,7 +3,7 @@ use miette::Result;
 use std::env;
 use std::path::PathBuf;
 
-use djuke_platform::DjukePaths;
+use djuke_core::DjukePaths;
 
 mod cli;
 mod commands;
@@ -14,7 +14,7 @@ use cli::{Cli, Commands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    djuke_process::init_terminal_safety();
+    djuke_build::init_terminal_safety();
 
     let cli = Cli::parse();
 
