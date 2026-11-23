@@ -39,7 +39,7 @@ djuke-cache = { path = "crates/djuke-cache" }
 
 # Async & Networking
 tokio = { version = "1.40", features = ["full"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "stream", "json"] }
 futures-util = "0.3"
 bytes = "1"
 
