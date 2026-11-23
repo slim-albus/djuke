@@ -31,15 +31,39 @@ pub fn extract_zip(archive_path: &Path, target_dir: &Path) -> Result<()> {
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let mut outfile = File::create(&dest)?;
-            io::copy(&mut file, &mut outfile)?;
+
+            #[cfg(unix)]
+            let is_symlink = file
+                .unix_mode()
+                .map(|m| (m & 0o170000) == 0o120000)
+                .unwrap_or(false);
+            #[cfg(not(unix))]
+            let is_symlink = false;
+
+            if is_symlink {
+                #[cfg(unix)]
+                {
+                    use std::io::Read;
+                    let mut link_target = String::new();
+                    file.read_to_string(&mut link_target)?;
+                    if dest.exists() || dest.is_symlink() {
+                        let _ = std::fs::remove_file(&dest);
+                    }
+                    std::os::unix::fs::symlink(&link_target, &dest)?;
+                }
+            } else {
+                let mut outfile = File::create(&dest)?;
+                io::copy(&mut file, &mut outfile)?;
+            }
         }
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             if let Some(mode) = file.unix_mode() {
-                let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(mode));
+                if (mode & 0o170000) != 0o120000 {
+                    let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(mode));
+                }
             }
         }
     }

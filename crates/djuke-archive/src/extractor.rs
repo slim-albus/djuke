@@ -42,9 +42,9 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> Result<()
         staging_dir.path().to_path_buf()
     };
 
-    // If destination already exists, remove it first
+    // If destination already exists, remove it first with forced attribute cleanup
     if destination_dir.exists() {
-        fs::remove_dir_all(destination_dir)?;
+        remove_dir_all_force(destination_dir)?;
     }
 
     // Atomic move / rename
@@ -53,6 +53,37 @@ pub fn extract_archive(archive_path: &Path, destination_dir: &Path) -> Result<()
         copy_dir_all(&final_content_dir, destination_dir)?;
     }
 
+    Ok(())
+}
+
+pub fn remove_dir_all_force(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    #[cfg(windows)]
+    {
+        // Recursively clear read-only attributes so Windows doesn't fail with AccessDenied
+        fn clear_readonly(p: &Path) {
+            if let Ok(entries) = fs::read_dir(p) {
+                for entry in entries.flatten() {
+                    let entry_path = entry.path();
+                    if entry_path.is_dir() {
+                        clear_readonly(&entry_path);
+                    } else if let Ok(metadata) = entry.metadata() {
+                        let mut perms = metadata.permissions();
+                        if perms.readonly() {
+                            perms.set_readonly(false);
+                            let _ = fs::set_permissions(&entry_path, perms);
+                        }
+                    }
+                }
+            }
+        }
+        clear_readonly(path);
+    }
+
+    fs::remove_dir_all(path)?;
     Ok(())
 }
 
