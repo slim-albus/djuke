@@ -1,6 +1,6 @@
 use colored::Colorize;
-use djuke_core::{DjukeError, Result};
 use djuke_core::{Arch, Os, Platform};
+use djuke_core::{DjukeError, Result};
 use djuke_io::Downloader;
 use serde::Deserialize;
 use std::env;

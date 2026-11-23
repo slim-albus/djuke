@@ -53,10 +53,7 @@ pub async fn handle_new(
         djuke_templates::TemplateType::SpringBoot => {
             let central = djuke_pm::MavenCentralClient::new();
             central
-                .resolve_latest_version(
-                    "org.springframework.boot",
-                    "spring-boot-starter-parent",
-                )
+                .resolve_latest_version("org.springframework.boot", "spring-boot-starter-parent")
                 .await
                 .ok()
         }
@@ -125,14 +122,9 @@ pub async fn handle_new(
         version: java_str,
     };
     if let Ok(installed_jdk) = resolve_jdk(&jdk_spec, paths, true, quiet).await {
-        let _ = djuke_build::prime_wrapper(
-            tool_enum,
-            &dest,
-            &installed_jdk.java_home,
-            paths,
-            quiet,
-        )
-        .await;
+        let _ =
+            djuke_build::prime_wrapper(tool_enum, &dest, &installed_jdk.java_home, paths, quiet)
+                .await;
     }
 
     println!(
@@ -179,10 +171,7 @@ pub async fn handle_init(
         djuke_templates::TemplateType::SpringBoot => {
             let central = djuke_pm::MavenCentralClient::new();
             central
-                .resolve_latest_version(
-                    "org.springframework.boot",
-                    "spring-boot-starter-parent",
-                )
+                .resolve_latest_version("org.springframework.boot", "spring-boot-starter-parent")
                 .await
                 .ok()
         }

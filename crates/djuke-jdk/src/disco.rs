@@ -291,14 +291,12 @@ impl djuke_core::JdkCatalogProvider for DiscoClient {
             .find_best_package(&spec.version, spec.distribution, platform)
             .await?;
 
-        let download_url = pkg
-            .download_link
-            .ok_or_else(|| DjukeError::JdkNotFound {
-                version: spec.version.clone(),
-                distro: spec.distribution.to_string(),
-                os: os.to_string(),
-                arch: arch.to_string(),
-            })?;
+        let download_url = pkg.download_link.ok_or_else(|| DjukeError::JdkNotFound {
+            version: spec.version.clone(),
+            distro: spec.distribution.to_string(),
+            os: os.to_string(),
+            arch: arch.to_string(),
+        })?;
 
         let filename = pkg.filename.unwrap_or_else(|| "jdk_archive".to_string());
         let sha256 = if pkg

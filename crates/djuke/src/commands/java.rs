@@ -176,7 +176,11 @@ pub async fn handle_java(
         distro: None,
     });
     match sub {
-        JdkSubcommands::List { remote, lts, distro } => {
+        JdkSubcommands::List {
+            remote,
+            lts,
+            distro,
+        } => {
             let store = JdkStore::new(paths.clone());
             if remote {
                 let disco = DiscoClient::new();
@@ -250,9 +254,8 @@ pub async fn handle_java(
             } else {
                 let installed = store.list_installed()?;
                 let config = resolve_project_config(current_dir, None, paths);
-                let global_config =
-                    djuke_config::global::load_global_config(&paths.config_file())
-                        .unwrap_or_default();
+                let global_config = djuke_config::global::load_global_config(&paths.config_file())
+                    .unwrap_or_default();
                 let g_pref = global_config.java.as_ref().map(|j| {
                     (
                         j.default_distribution
@@ -345,7 +348,9 @@ pub async fn handle_java(
                                 let input: String = dialoguer::Input::with_theme(&theme)
                                     .with_prompt("Enter JDK specification (e.g. '21', 'zulu@17')")
                                     .interact_text()
-                                    .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
+                                    .map_err(|e| {
+                                        DjukeError::Process(format!("Prompt failed: {}", e))
+                                    })?;
                                 input
                             }
                         }
@@ -367,7 +372,9 @@ pub async fn handle_java(
             } else if !quiet {
                 println!(
                     "✓ Installed {} to {}",
-                    format!("{}@{}", installed.distribution, installed.version).green().bold(),
+                    format!("{}@{}", installed.distribution, installed.version)
+                        .green()
+                        .bold(),
                     installed.java_home.display()
                 );
             }
@@ -399,15 +406,13 @@ pub async fn handle_java(
                                 "installed": installed.is_some(),
                                 "java_home": installed.as_ref().map(|i| i.java_home.display().to_string()),
                             });
-                            let s = serde_json::to_string_pretty(&json_data)
-                                .map_err(|e| djuke_core::DjukeError::Serialization(e.to_string()))?;
+                            let s = serde_json::to_string_pretty(&json_data).map_err(|e| {
+                                djuke_core::DjukeError::Serialization(e.to_string())
+                            })?;
                             println!("{}", s);
                         } else {
                             println!("{}", "Global Default Java Configuration:".bold().cyan());
-                            println!(
-                                "  • Runtime:    {}",
-                                format!("{}@{}", d, v).green().bold()
-                            );
+                            println!("  • Runtime:    {}", format!("{}@{}", d, v).green().bold());
                             println!("  • Source:     {}", source);
                             if let Some(i) = installed {
                                 println!(
@@ -433,8 +438,9 @@ pub async fn handle_java(
                                 "configured": false,
                                 "message": "No global default Java configured. Run 'djuke use --global' to set one.",
                             });
-                            let s = serde_json::to_string_pretty(&json_data)
-                                .map_err(|e| djuke_core::DjukeError::Serialization(e.to_string()))?;
+                            let s = serde_json::to_string_pretty(&json_data).map_err(|e| {
+                                djuke_core::DjukeError::Serialization(e.to_string())
+                            })?;
                             println!("{}", s);
                         } else {
                             println!("{}", "Global Default Java Configuration:".bold().cyan());
@@ -466,7 +472,11 @@ pub async fn handle_java(
             }
         }
 
-        JdkSubcommands::Use { spec, distro, global } => {
+        JdkSubcommands::Use {
+            spec,
+            distro,
+            global,
+        } => {
             handle_use_command(spec, distro, global, paths, current_dir, quiet).await?;
         }
 

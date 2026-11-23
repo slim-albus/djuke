@@ -30,7 +30,8 @@ async fn main() -> Result<()> {
             commands::doctor::handle_doctor(&current_dir, &paths, cli.json).await?;
         }
         Commands::Jdk(jdk_args) => {
-            commands::java::handle_java(jdk_args, &current_dir, &paths, cli.json, cli.quiet).await?;
+            commands::java::handle_java(jdk_args, &current_dir, &paths, cli.json, cli.quiet)
+                .await?;
         }
         Commands::New {
             name,
@@ -95,14 +96,23 @@ async fn main() -> Result<()> {
             distro,
             global,
         } => {
-            commands::java::handle_use_command(spec, distro, global, &paths, &current_dir, cli.quiet).await?;
+            commands::java::handle_use_command(
+                spec,
+                distro,
+                global,
+                &paths,
+                &current_dir,
+                cli.quiet,
+            )
+            .await?;
         }
         Commands::Add {
             dependency,
             scope,
             test,
         } => {
-            commands::pm::handle_add(dependency, scope, test, &current_dir, &paths, cli.quiet).await?;
+            commands::pm::handle_add(dependency, scope, test, &current_dir, &paths, cli.quiet)
+                .await?;
         }
         Commands::Remove { dependency } => {
             commands::pm::handle_remove(dependency, &current_dir, &paths)?;
@@ -114,7 +124,8 @@ async fn main() -> Result<()> {
             commands::cache::handle_cache(cache_args, &paths, cli.json)?;
         }
         Commands::Setup { tool, distro, spec } => {
-            commands::project::handle_setup(tool, distro, spec, &current_dir, &paths, cli.quiet).await?;
+            commands::project::handle_setup(tool, distro, spec, &current_dir, &paths, cli.quiet)
+                .await?;
         }
         Commands::Build(build_args) => {
             commands::build::handle_build(build_args, &current_dir, &paths, cli.quiet).await?;

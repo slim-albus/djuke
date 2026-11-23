@@ -36,7 +36,9 @@ pub fn extract_pom_dependencies(content: &str) -> Vec<DependencySpec> {
     // First extract properties for placeholder resolution
     let prop_re = Regex::new(r"<([a-zA-Z0-9._-]+)>([^<]+)</[a-zA-Z0-9._-]+>").unwrap();
     let mut properties = HashMap::new();
-    if let (Some(prop_start), Some(prop_end)) = (content.find("<properties>"), content.find("</properties>")) {
+    if let (Some(prop_start), Some(prop_end)) =
+        (content.find("<properties>"), content.find("</properties>"))
+    {
         let body_start = prop_start + "<properties>".len();
         if body_start < prop_end {
             let prop_block = &content[body_start..prop_end];

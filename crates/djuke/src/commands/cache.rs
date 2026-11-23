@@ -1,8 +1,8 @@
+use crate::cli::{CacheArgs, CacheSubcommands};
 use colored::Colorize;
-use miette::Result;
 use djuke_core::DjukePaths;
 use djuke_io as djuke_cache;
-use crate::cli::{CacheArgs, CacheSubcommands};
+use miette::Result;
 
 pub fn handle_cache(args: CacheArgs, paths: &DjukePaths, json: bool) -> Result<()> {
     match args.command {

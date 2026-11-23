@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use crate::error::Result;
 use crate::model::{BuildTool, JdkSpec};
+use std::path::{Path, PathBuf};
 
 /// Trait abstraction for build tool execution drivers (Gradle, Maven, etc.)
 pub trait BuildDriver: Send + Sync {

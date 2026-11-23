@@ -1,8 +1,8 @@
-use std::io::IsTerminal;
 use miette::Result;
+use std::io::IsTerminal;
 
-use djuke_core::{DjukeError, JdkDistribution};
 use djuke_core::DjukePaths;
+use djuke_core::{DjukeError, JdkDistribution};
 
 use crate::cli::{CliProjectOptions, ResolvedProjectInitOptions};
 

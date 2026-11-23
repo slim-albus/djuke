@@ -2,7 +2,9 @@ use chrono::Utc;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use djuke_core::{DjukeError, DjukePaths, InstalledJdk, JdkDistribution, JdkSpec, Platform, Result};
+use djuke_core::{
+    DjukeError, DjukePaths, InstalledJdk, JdkDistribution, JdkSpec, Platform, Result,
+};
 
 pub struct JdkStore {
     paths: DjukePaths,

@@ -57,9 +57,8 @@ fn insert_dependency_into_pom(content: &str, dep_xml: &str, pom_path: &Path) -> 
         }
     }
 
-    let is_inside_mgmt = |pos: usize| -> bool {
-        dep_mgmt_spans.iter().any(|(s, e)| pos >= *s && pos < *e)
-    };
+    let is_inside_mgmt =
+        |pos: usize| -> bool { dep_mgmt_spans.iter().any(|(s, e)| pos >= *s && pos < *e) };
 
     // Find a </dependencies> tag that is NOT inside <dependencyManagement>
     let mut target_close_tag = None;

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use djuke_core::{BuildTool, JdkDistribution, JdkSpec, TaskMap};
 use djuke_core::DjukePaths;
+use djuke_core::{BuildTool, JdkDistribution, JdkSpec, TaskMap};
 
 use crate::detect::detect_project_markers;
 use crate::global::load_global_config;

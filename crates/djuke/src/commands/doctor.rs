@@ -1,7 +1,7 @@
-use std::path::Path;
-use miette::Result;
-use djuke_doctor::run_doctor_checks;
 use djuke_core::DjukePaths;
+use djuke_doctor::run_doctor_checks;
+use miette::Result;
+use std::path::Path;
 
 pub async fn handle_doctor(current_dir: &Path, paths: &DjukePaths, json: bool) -> Result<()> {
     let report = run_doctor_checks(current_dir, paths).await?;

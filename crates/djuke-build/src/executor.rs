@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::ExitStatus;
 
-use djuke_core::{BuildTool, DjukeError, DjukePaths, Result};
 use crate::process::{CommandContext, ProcessRunner};
+use djuke_core::{BuildTool, DjukeError, DjukePaths, Result};
 
 use crate::bootstrap::{create_gradle_wrapper, create_maven_wrapper};
 use crate::wrapper::find_build_executable_with_paths;
@@ -135,11 +135,7 @@ mod tests {
         let args = split_command_args(cmd);
         assert_eq!(
             args,
-            vec![
-                "bootRun",
-                "-Dspring.profiles.active=dev local",
-                "--info"
-            ]
+            vec!["bootRun", "-Dspring.profiles.active=dev local", "--info"]
         );
     }
 }

@@ -8,7 +8,9 @@ use djuke_config::resolve_project_config_with_tool;
 use djuke_core::{BuildTool, DjukeError, DjukePaths};
 use djuke_jdk::resolve_jdk;
 
-use crate::cli::{BuildTaskArgs, GradleArgs, GradleSubcommands, MavenArgs, MavenSubcommands, RunTaskArgs};
+use crate::cli::{
+    BuildTaskArgs, GradleArgs, GradleSubcommands, MavenArgs, MavenSubcommands, RunTaskArgs,
+};
 use crate::commands::script::run_single_file_script;
 
 pub async fn run_task(
@@ -157,14 +159,8 @@ pub async fn handle_run(
             } else {
                 &[]
             };
-            return run_single_file_script(
-                &file_path,
-                remaining_args,
-                args.tool,
-                paths,
-                quiet,
-            )
-            .await;
+            return run_single_file_script(&file_path, remaining_args, args.tool, paths, quiet)
+                .await;
         }
     }
 
@@ -208,12 +204,8 @@ pub async fn handle_gradle(
 ) -> Result<()> {
     match args.command {
         Some(GradleSubcommands::Wrapper { version }) => {
-            let config = resolve_project_config_with_tool(
-                current_dir,
-                None,
-                Some(BuildTool::Gradle),
-                paths,
-            );
+            let config =
+                resolve_project_config_with_tool(current_dir, None, Some(BuildTool::Gradle), paths);
             let v = match version {
                 Some(ver) => ver,
                 None => {
@@ -267,14 +259,7 @@ pub async fn handle_gradle(
             } else {
                 args.args
             };
-            run_raw_tool(
-                BuildTool::Gradle,
-                &cmd_args,
-                current_dir,
-                paths,
-                quiet,
-            )
-            .await?;
+            run_raw_tool(BuildTool::Gradle, &cmd_args, current_dir, paths, quiet).await?;
         }
     }
     Ok(())
@@ -288,12 +273,8 @@ pub async fn handle_maven(
 ) -> Result<()> {
     match args.command {
         Some(MavenSubcommands::Wrapper { version }) => {
-            let config = resolve_project_config_with_tool(
-                current_dir,
-                None,
-                Some(BuildTool::Maven),
-                paths,
-            );
+            let config =
+                resolve_project_config_with_tool(current_dir, None, Some(BuildTool::Maven), paths);
             let v = match version {
                 Some(ver) => ver,
                 None => djuke_build::resolve_dynamic_maven_version(Some(paths), true).await,
@@ -324,14 +305,7 @@ pub async fn handle_maven(
             } else {
                 args.args
             };
-            run_raw_tool(
-                BuildTool::Maven,
-                &cmd_args,
-                current_dir,
-                paths,
-                quiet,
-            )
-            .await?;
+            run_raw_tool(BuildTool::Maven, &cmd_args, current_dir, paths, quiet).await?;
         }
     }
     Ok(())
@@ -351,11 +325,9 @@ pub async fn handle_external(
     if args[0].ends_with(".java") {
         let file_path = std::path::PathBuf::from(&args[0]);
         if !file_path.is_file() {
-            return Err(DjukeError::Generic(format!(
-                "Java script file '{}' not found",
-                args[0]
-            ))
-            .into());
+            return Err(
+                DjukeError::Generic(format!("Java script file '{}' not found", args[0])).into(),
+            );
         }
         let remaining_args = if args.len() > 1 { &args[1..] } else { &[] };
         return run_single_file_script(&file_path, remaining_args, None, paths, quiet).await;
@@ -364,4 +336,3 @@ pub async fn handle_external(
     let task_args = args[1..].to_vec();
     run_task(task_name, task_args, current_dir, paths, quiet, None).await
 }
-

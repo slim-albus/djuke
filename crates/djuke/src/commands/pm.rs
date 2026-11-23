@@ -1,7 +1,7 @@
-use std::io::IsTerminal;
-use std::path::Path;
 use colored::Colorize;
 use miette::Result;
+use std::io::IsTerminal;
+use std::path::Path;
 
 use djuke_config::resolve_project_config;
 use djuke_core::{BuildTool, DjukeError, DjukePaths};
@@ -171,9 +171,10 @@ pub fn handle_remove(
         _ => {
             let deps = extract_project_dependencies(&config.project_root)?;
             if deps.is_empty() {
-                return Err(
-                    DjukeError::Generic("No dependencies found in project to remove.".into()).into(),
-                );
+                return Err(DjukeError::Generic(
+                    "No dependencies found in project to remove.".into(),
+                )
+                .into());
             }
             let is_interactive = std::io::stdin().is_terminal();
             if is_interactive {
@@ -190,7 +191,9 @@ pub fn handle_remove(
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                 items[idx].clone()
             } else {
-                return Err(DjukeError::Generic("Please provide dependency to remove".into()).into());
+                return Err(
+                    DjukeError::Generic("Please provide dependency to remove".into()).into(),
+                );
             }
         }
     };

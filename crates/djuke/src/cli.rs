@@ -1,6 +1,6 @@
-use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 use djuke_core::{BuildTool, JdkDistribution};
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -225,7 +225,10 @@ pub enum Commands {
     #[command(about = "Execute project application or single Java source file")]
     Run(RunTaskArgs),
 
-    #[command(about = "Execute development task via the project's build tool", hide = true)]
+    #[command(
+        about = "Execute development task via the project's build tool",
+        hide = true
+    )]
     Dev(BuildTaskArgs),
 
     #[command(about = "Display a visual tree of project dependencies")]
