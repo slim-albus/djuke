@@ -64,6 +64,7 @@ pub fn remove_dir_all_force(path: &Path) -> Result<()> {
     #[cfg(windows)]
     {
         // Recursively clear read-only attributes so Windows doesn't fail with AccessDenied
+        #[allow(clippy::permissions_set_readonly_false)]
         fn clear_readonly(p: &Path) {
             if let Ok(entries) = fs::read_dir(p) {
                 for entry in entries.flatten() {
