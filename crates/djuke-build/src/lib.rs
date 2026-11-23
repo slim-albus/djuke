@@ -1,4 +1,5 @@
 pub mod bootstrap;
+pub mod driver;
 pub mod executor;
 pub mod version_resolver;
 pub mod wrapper;
@@ -8,6 +9,7 @@ pub use bootstrap::{
     create_maven_wrapper, ensure_build_tool_installed, extract_java_major, prime_wrapper,
     DEFAULT_GRADLE_VERSION, DEFAULT_MAVEN_VERSION,
 };
+pub use driver::{GradleDriver, MavenDriver};
 pub use executor::{execute_task, TaskExecution};
 pub use version_resolver::{
     resolve_dynamic_gradle_version, resolve_dynamic_maven_version, CachedToolVersions,

@@ -275,3 +275,49 @@ impl DiscoClient {
         }
     }
 }
+
+impl djuke_core::JdkCatalogProvider for DiscoClient {
+    fn name(&self) -> &'static str {
+        "foojay-disco"
+    }
+
+    async fn find_package(
+        &self,
+        spec: &djuke_core::JdkSpec,
+        os: &str,
+        arch: &str,
+    ) -> Result<djuke_core::DiscoveredJdkPackage> {
+        let platform = Platform::current();
+        let pkg = self
+            .find_best_package(&spec.version, spec.distribution, platform)
+            .await?;
+
+        let download_url = pkg
+            .download_link
+            .ok_or_else(|| DjukeError::JdkNotFound {
+                version: spec.version.clone(),
+                distro: spec.distribution.to_string(),
+                os: os.to_string(),
+                arch: arch.to_string(),
+            })?;
+
+        let filename = pkg.filename.unwrap_or_else(|| "jdk_archive".to_string());
+        let sha256 = if pkg
+            .checksum_type
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("sha256"))
+            .unwrap_or(false)
+        {
+            pkg.checksum
+        } else {
+            None
+        };
+
+        Ok(djuke_core::DiscoveredJdkPackage {
+            download_url,
+            filename,
+            sha256_checksum: sha256,
+            size_bytes: None,
+        })
+    }
+}
