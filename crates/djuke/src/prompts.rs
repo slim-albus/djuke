@@ -49,20 +49,21 @@ pub async fn resolve_project_options(
         None => {
             if is_interactive {
                 let templates = [
-                    "CLI Application        - Minimal Java console app with Main class (Java 8 - 27+)",
-                    "Library                - Reusable Java library with JUnit 5 test suite (Java 8 - 27+)",
-                    "Spring Boot Web API    - Full-stack web app with Spring Boot (Spring Initializr / Java 17 - 27)",
-                    "Quarkus REST API       - Supersonic Subatomic reactive microservice (Java 17 - 23)",
-                    "Micronaut Microservice - Cloud-native modular Java application (Java 17 - 23)",
-                    "Javalin REST API       - Lightweight, ultra-fast embedded REST API with Jetty (Java 11 - 27+)",
-                    "gRPC Microservice      - High-performance Protocol Buffers & gRPC service (Java 11 - 27+)",
-                    "Picocli CLI            - Production command-line app with annotations & colors (Java 8 - 27+)",
-                    "Multi-Module Project   - Enterprise modular architecture (core library + api service) (Java 8 - 27+)",
+                    "CLI Application      - Minimal Java console app",
+                    "Library              - Reusable library with JUnit 5",
+                    "Spring Boot Web API  - Full-stack web application",
+                    "Quarkus REST API     - Reactive cloud microservice",
+                    "Micronaut API        - Modular cloud-native service",
+                    "Javalin REST API     - Lightweight embedded REST API",
+                    "gRPC Microservice    - High-performance gRPC service",
+                    "Picocli CLI          - CLI app with flags and colors",
+                    "Multi-Module Project - Modular library and service",
                 ];
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select project template")
                     .items(&templates)
                     .default(0)
+                    .max_length(7)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                 match idx {
@@ -89,14 +90,15 @@ pub async fn resolve_project_options(
         None => {
             if is_interactive {
                 let tools = [
-                    "Gradle (Kotlin DSL - build.gradle.kts)   [Modern Gradle - Recommended]",
-                    "Gradle (Groovy DSL - build.gradle)       [Classic Gradle syntax]",
-                    "Maven (pom.xml)                          [Standard Apache Maven XML]",
+                    "Gradle (Kotlin DSL)  [Recommended - build.gradle.kts]",
+                    "Gradle (Groovy DSL)  [Classic syntax - build.gradle]",
+                    "Maven                [Apache XML - pom.xml]",
                 ];
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select build tool")
                     .items(&tools)
                     .default(0)
+                    .max_length(5)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                 match idx {
@@ -117,21 +119,22 @@ pub async fn resolve_project_options(
         None => {
             if is_interactive {
                 let distros = [
-                    "OpenJDK (Oracle)      [Default - Official reference openjdk from jdk.java.net]",
-                    "Eclipse Temurin       [Adoptium open-source build, recommended for enterprise]",
-                    "Amazon Corretto       [Production-ready multiplatform distribution from AWS]",
-                    "Azul Zulu             [Certified TCK-tested OpenJDK builds]",
-                    "Microsoft OpenJDK     [Optimized for Azure and general cloud deployments]",
-                    "GraalVM Community     [High-performance runtime with native-image compilation]",
-                    "BellSoft Liberica     [Recommended by Spring Boot, supports full desktop/cloud]",
-                    "Oracle JDK            [Official Oracle commercial/personal distribution]",
-                    "SAP SapMachine        [Enterprise OpenJDK maintained by SAP]",
-                    "IBM Semeru (OpenJ9)   [Low memory footprint JVM powered by Eclipse OpenJ9]",
+                    "OpenJDK (Oracle)      [Default official build]",
+                    "Eclipse Temurin       [Adoptium production standard]",
+                    "Amazon Corretto       [AWS production distribution]",
+                    "Azul Zulu             [Certified TCK builds]",
+                    "Microsoft OpenJDK     [Cloud-optimized OpenJDK]",
+                    "GraalVM Community     [Native-image high performance]",
+                    "BellSoft Liberica     [Full desktop & cloud builds]",
+                    "Oracle JDK            [Official Oracle distribution]",
+                    "SAP SapMachine        [Enterprise SAP OpenJDK]",
+                    "IBM Semeru            [Low footprint Eclipse OpenJ9]",
                 ];
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select JDK distribution (flavour)")
                     .items(&distros)
                     .default(0)
+                    .max_length(7)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                 match idx {
@@ -172,53 +175,39 @@ pub async fn resolve_project_options(
                 };
 
                 let v21_label = if is_downloaded("21") {
-                    "21 (LTS) [Installed locally ✓] - Recommended: Current production standard"
-                        .to_string()
+                    "21 (LTS) [Installed ✓] - Production standard".to_string()
                 } else {
-                    "21 (LTS)                       - Recommended: Current production standard"
-                        .to_string()
+                    "21 (LTS)               - Production standard".to_string()
                 };
                 let v25_label = if is_downloaded("25") {
-                    "25 (LTS) [Installed locally ✓] - Modern standard: Next-generation long-term support"
-                        .to_string()
+                    "25 (LTS) [Installed ✓] - Next-gen LTS standard".to_string()
                 } else {
-                    "25 (LTS)                       - Modern standard: Next-generation long-term support"
-                        .to_string()
+                    "25 (LTS)               - Next-gen LTS standard".to_string()
                 };
                 let v23_label = if is_downloaded("23") {
-                    "23 (GA)  [Installed locally ✓] - Recent feature release: Virtual threads & modern features"
-                        .to_string()
+                    "23 (GA)  [Installed ✓] - Feature release".to_string()
                 } else {
-                    "23 (GA)                        - Recent feature release: Virtual threads & modern features"
-                        .to_string()
+                    "23 (GA)                - Feature release".to_string()
                 };
                 let v17_label = if is_downloaded("17") {
-                    "17 (LTS) [Installed locally ✓] - Enterprise LTS: Broad compatibility for established projects"
-                        .to_string()
+                    "17 (LTS) [Installed ✓] - Enterprise baseline".to_string()
                 } else {
-                    "17 (LTS)                       - Enterprise LTS: Broad compatibility for established projects"
-                        .to_string()
+                    "17 (LTS)               - Enterprise baseline".to_string()
                 };
                 let v27_label = if is_downloaded("27") {
-                    "27 (EA)  [Installed locally ✓] - Next-Gen / Bleeding edge: Early access language features"
-                        .to_string()
+                    "27 (EA)  [Installed ✓] - Bleeding edge preview".to_string()
                 } else {
-                    "27 (EA)                        - Next-Gen / Bleeding edge: Early access language features"
-                        .to_string()
+                    "27 (EA)                - Bleeding edge preview".to_string()
                 };
                 let v11_label = if is_downloaded("11") {
-                    "11 (LTS) [Installed locally ✓] - Legacy enterprise: Older enterprise maintenance"
-                        .to_string()
+                    "11 (LTS) [Installed ✓] - Legacy enterprise LTS".to_string()
                 } else {
-                    "11 (LTS)                       - Legacy enterprise: Older enterprise maintenance"
-                        .to_string()
+                    "11 (LTS)               - Legacy enterprise LTS".to_string()
                 };
                 let v8_label = if is_downloaded("8") {
-                    "8  (LTS) [Installed locally ✓] - Legacy baseline: Java 1.8 compatibility"
-                        .to_string()
+                    "8  (LTS) [Installed ✓] - Legacy Java 1.8".to_string()
                 } else {
-                    "8  (LTS)                       - Legacy baseline: Java 1.8 compatibility"
-                        .to_string()
+                    "8  (LTS)               - Legacy Java 1.8".to_string()
                 };
 
                 let versions = [
@@ -235,6 +224,7 @@ pub async fn resolve_project_options(
                     .with_prompt("Select target Java version")
                     .items(&versions)
                     .default(0)
+                    .max_length(7)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                 match idx {
@@ -264,16 +254,17 @@ pub async fn resolve_project_options(
         None => {
             if is_interactive {
                 let frameworks = [
-                    "JUnit 5 (Jupiter) - Modern standard testing framework for Java [Recommended]",
-                    "AssertJ + JUnit 5 - Fluent, rich assertions with expressive test diagnostics",
-                    "Spock Framework   - Expressive BDD-style testing with Groovy syntax",
-                    "TestNG            - Feature-rich enterprise test framework with data providers",
-                    "None              - Skip test library and do not generate test files",
+                    "JUnit 5 (Jupiter) - Modern standard [Recommended]",
+                    "AssertJ + JUnit 5 - Fluent assertion library",
+                    "Spock Framework   - BDD testing with Groovy",
+                    "TestNG            - Enterprise test framework",
+                    "None              - Do not generate test files",
                 ];
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select testing framework")
                     .items(&frameworks)
                     .default(0)
+                    .max_length(5)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                 match idx {
@@ -324,8 +315,9 @@ pub async fn resolve_project_options(
             let labels: Vec<String> = popular
                 .iter()
                 .map(|d| {
-                    let desc = d.description.as_deref().unwrap_or("");
-                    format!("{:<15} - {:<24} [{}]", d.id, format!("({})", d.name), desc)
+                    let name = &d.name;
+                    let short_name = if name.len() > 22 { &name[..20] } else { name };
+                    format!("{:<12} - {}", d.id, short_name)
                 })
                 .collect();
             let default_flags: Vec<bool> = popular
@@ -336,6 +328,7 @@ pub async fn resolve_project_options(
                 .with_prompt("Select Spring Boot dependencies (Space to toggle, Enter to confirm)")
                 .items(&labels)
                 .defaults(&default_flags)
+                .max_length(7)
                 .interact()
                 .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
 
@@ -365,18 +358,9 @@ pub async fn resolve_project_options(
                     let rem_labels: Vec<String> = remaining
                         .iter()
                         .map(|d| {
-                            let desc = d.description.as_deref().unwrap_or("");
-                            let short_desc = if desc.len() > 40 {
-                                format!("{}...", &desc[..37])
-                            } else {
-                                desc.to_string()
-                            };
-                            format!(
-                                "{:<15} - {:<24} [{}]",
-                                d.id,
-                                format!("({})", d.name),
-                                short_desc
-                            )
+                            let name = &d.name;
+                            let short_name = if name.len() > 22 { &name[..20] } else { name };
+                            format!("{:<12} - {}", d.id, short_name)
                         })
                         .collect();
                     let default_rem_flags = vec![false; remaining.len()];
@@ -386,6 +370,7 @@ pub async fn resolve_project_options(
                         )
                         .items(&rem_labels)
                         .defaults(&default_rem_flags)
+                        .max_length(7)
                         .interact()
                         .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                     for idx in rem_chosen {

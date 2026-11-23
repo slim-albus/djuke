@@ -52,10 +52,30 @@ pub fn init_terminal_safety() {
     #[cfg(windows)]
     {
         capture_current_console_modes();
+        enable_virtual_terminal_processing();
         if !HANDLER_INSTALLED.swap(true, Ordering::SeqCst) {
             unsafe {
                 win32::SetConsoleCtrlHandler(Some(console_ctrl_handler), 1);
             }
+        }
+    }
+}
+
+/// Enable virtual terminal processing on Windows stdout and stderr for ANSI cursor control.
+#[cfg(windows)]
+pub fn enable_virtual_terminal_processing() {
+    unsafe {
+        let h_out = win32::GetStdHandle(win32::STD_OUTPUT_HANDLE);
+        let mut out_mode: win32::Dword = 0;
+        if win32::GetConsoleMode(h_out, &mut out_mode) != 0 {
+            // 0x0001 = ENABLE_PROCESSED_OUTPUT, 0x0004 = ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            let _ = win32::SetConsoleMode(h_out, out_mode | 0x0001 | 0x0004);
+        }
+
+        let h_err = win32::GetStdHandle(win32::STD_ERROR_HANDLE);
+        let mut err_mode: win32::Dword = 0;
+        if win32::GetConsoleMode(h_err, &mut err_mode) != 0 {
+            let _ = win32::SetConsoleMode(h_err, err_mode | 0x0001 | 0x0004);
         }
     }
 }

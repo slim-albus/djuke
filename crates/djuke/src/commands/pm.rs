@@ -66,18 +66,24 @@ pub async fn handle_add(
                 let items: Vec<String> = docs
                     .iter()
                     .map(|d| {
-                        format!(
+                        let coord = format!(
                             "{}:{} ({})",
                             d.group_id,
                             d.artifact_id,
                             d.latest_version.as_deref().unwrap_or("-")
-                        )
+                        );
+                        if coord.len() > 55 {
+                            format!("{}...", &coord[..52])
+                        } else {
+                            coord
+                        }
                     })
                     .collect();
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select dependency to add")
                     .items(&items)
                     .default(0)
+                    .max_length(6)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                 format!("{}:{}", docs[idx].group_id, docs[idx].artifact_id)
@@ -181,12 +187,20 @@ pub fn handle_remove(
                 let theme = dialoguer::theme::ColorfulTheme::default();
                 let items: Vec<String> = deps
                     .iter()
-                    .map(|d| format!("{}:{}", d.group_id, d.artifact_id))
+                    .map(|d| {
+                        let coord = format!("{}:{}", d.group_id, d.artifact_id);
+                        if coord.len() > 55 {
+                            format!("{}...", &coord[..52])
+                        } else {
+                            coord
+                        }
+                    })
                     .collect();
                 let idx = dialoguer::Select::with_theme(&theme)
                     .with_prompt("Select dependency to remove")
                     .items(&items)
                     .default(0)
+                    .max_length(6)
                     .interact()
                     .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                 items[idx].clone()

@@ -38,16 +38,17 @@ pub async fn handle_use_command(
                 if installed.is_empty() {
                     println!("{}", "No JDKs currently installed locally.".yellow().bold());
                     let install_options = [
-                        "Download & install OpenJDK (Oracle) 21 [Default - Official reference openjdk build]",
-                        "Download & install Eclipse Temurin 21 (LTS) [Adoptium production standard]",
-                        "Download & install Eclipse Temurin 25 (LTS) [Next-gen long-term support]",
-                        "Download & install Eclipse Temurin 17 (LTS) [Enterprise legacy LTS]",
+                        "OpenJDK 21 (Default reference build)",
+                        "Eclipse Temurin 21 (LTS baseline)",
+                        "Eclipse Temurin 25 (Next-gen LTS)",
+                        "Eclipse Temurin 17 (Legacy LTS)",
                         "Custom version & distribution...",
                     ];
                     let idx = dialoguer::Select::with_theme(&theme)
                         .with_prompt("Select a JDK to download, install, and set as default")
                         .items(&install_options)
                         .default(0)
+                        .max_length(6)
                         .interact()
                         .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
 
@@ -71,25 +72,15 @@ pub async fn handle_use_command(
                 } else {
                     let mut items: Vec<String> = installed
                         .iter()
-                        .map(|i| {
-                            format!(
-                                "{:<20} ({}) -> {}",
-                                format!("{}@{}", i.distribution, i.version).green(),
-                                i.major_version,
-                                i.java_home.display()
-                            )
-                        })
+                        .map(|i| format!("{}@{} (v{})", i.distribution, i.version, i.major_version))
                         .collect();
-                    items.push(
-                        "+ Download & install a new JDK runtime..."
-                            .cyan()
-                            .to_string(),
-                    );
+                    items.push("+ Install new JDK runtime...".to_string());
 
                     let idx = dialoguer::Select::with_theme(&theme)
                         .with_prompt("Select JDK runtime to activate")
                         .items(&items)
                         .default(0)
+                        .max_length(7)
                         .interact()
                         .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
 
@@ -324,17 +315,18 @@ pub async fn handle_java(
                     if std::io::stdin().is_terminal() {
                         let theme = dialoguer::theme::ColorfulTheme::default();
                         let options = [
-                            "Eclipse Temurin 21 (LTS) [Adoptium standard]",
-                            "Eclipse Temurin 25 (LTS) [Next-gen long-term support]",
-                            "Eclipse Temurin 17 (LTS) [Enterprise legacy LTS]",
-                            "Oracle OpenJDK 21 [Official reference build]",
-                            "Amazon Corretto 21 [AWS production runtime]",
+                            "Eclipse Temurin 21 (LTS standard)",
+                            "Eclipse Temurin 25 (Next-gen LTS)",
+                            "Eclipse Temurin 17 (Legacy LTS)",
+                            "Oracle OpenJDK 21 (Official build)",
+                            "Amazon Corretto 21 (AWS runtime)",
                             "Custom specification...",
                         ];
                         let idx = dialoguer::Select::with_theme(&theme)
                             .with_prompt("Select a JDK to download and install")
                             .items(&options)
                             .default(0)
+                            .max_length(6)
                             .interact()
                             .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
 
@@ -530,10 +522,8 @@ pub async fn handle_java(
                             .iter()
                             .map(|j| {
                                 format!(
-                                    "{}@{} ({})",
-                                    j.distribution,
-                                    j.version,
-                                    j.java_home.display()
+                                    "{}@{} (Java {})",
+                                    j.distribution, j.version, j.major_version
                                 )
                             })
                             .collect();
@@ -541,6 +531,7 @@ pub async fn handle_java(
                             .with_prompt("Select JDK to uninstall")
                             .items(&items)
                             .default(0)
+                            .max_length(7)
                             .interact()
                             .map_err(|e| DjukeError::Process(format!("Prompt failed: {}", e)))?;
                         installed[idx].id.clone()
