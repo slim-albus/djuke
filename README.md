@@ -32,9 +32,6 @@ djuke setup
 djuke run
 djuke test
 
-# Start live reload dev mode
-djuke dev
-
 # Run any build task directly
 djuke build
 ```
@@ -82,7 +79,6 @@ djuke run Script.java
 | `djuke init` | Initialize a Java project in the current directory |
 | `djuke setup` | Install required JDK and configure build wrappers |
 | `djuke run [target]` | Run project application or a single `.java` script |
-| `djuke dev` | Start application in development/live-reload mode |
 | `djuke build` | Execute build task |
 | `djuke test` | Execute test suite |
 | `djuke clean` | Execute clean task |

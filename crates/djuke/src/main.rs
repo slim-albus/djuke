@@ -230,7 +230,7 @@ enum Commands {
     #[command(about = "Execute project application or single Java source file")]
     Run(RunTaskArgs),
 
-    #[command(about = "Start the project application in development/live-reload mode")]
+    #[command(about = "Execute development task via the project's build tool", hide = true)]
     Dev(BuildTaskArgs),
 
     #[command(about = "Display a visual tree of project dependencies")]
